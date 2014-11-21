@@ -1,11 +1,11 @@
 /* ---------------------------------------------------------------------
- * $Id: step-35a.cc 30526 2013-08-29 20:06:27Z felix.gruber $
+ * $Id: step-35a.cc $
  *
  * Copyright (C) 2009 - 2013 by the deal.II authors
  *
- * This file is part of the deal.II library.
+ * This file is NOT part of the deal.II library.
  *
- * The deal.II library is free software; you can use it, redistribute
+ * This file is free software; you can use it, redistribute
  * it, and/or modify it under the terms of the GNU Lesser General
  * Public License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
@@ -13,7 +13,6 @@
  * the top level of the deal.II distribution.
  *
  * ---------------------------------------------------------------------
-
  *
  * Author: Abner Salgado, Texas A&M University 2009
  * Author: David Wells, Virginia Tech, 2014
