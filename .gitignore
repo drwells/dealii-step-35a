@@ -1,0 +1,9 @@
+*.h5
+*.txt
+callgrind*
+CMakeFiles/*
+Makefile
+cmake_install.cmake
+*.xdmf
+step-35a
+*\~
