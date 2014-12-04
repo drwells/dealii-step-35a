@@ -35,6 +35,7 @@
 #include <deal.II/base/utilities.h>
 #include <deal.II/base/conditional_ostream.h>
 
+#include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/solver_cg.h>
@@ -69,6 +70,7 @@
 #include <fstream>
 #include <cmath>
 #include <iostream>
+#include "h5.h"
 
 namespace Step35
 {
@@ -416,10 +418,10 @@ namespace Step35
     Vector<double> pres_n_minus_1;
     Vector<double> phi_n;
     Vector<double> phi_n_minus_1;
-    Vector<double> u_n[dim];
-    Vector<double> u_n_minus_1[dim];
-    Vector<double> u_star[dim];
-    Vector<double> force[dim];
+    BlockVector<double> u_n;
+    BlockVector<double> u_n_minus_1;
+    BlockVector<double> u_star;
+    BlockVector<double> force;
     Vector<double> v_tmp;
     Vector<double> pres_tmp;
     Vector<double> rot_u;
@@ -631,6 +633,10 @@ namespace Step35
     dof_handler_pressure (triangulation),
     quadrature_pressure (deg+1),
     quadrature_velocity (deg+2),
+    u_n(dim),
+    u_n_minus_1(dim),
+    u_star(dim),
+    force(dim),
     vel_max_its (data.vel_max_iterations),
     vel_Krylov_size (data.vel_Krylov_size),
     vel_off_diagonals (data.vel_off_diagonals),
@@ -694,10 +700,10 @@ namespace Step35
     pres_tmp.reinit (dof_handler_pressure.n_dofs());
     for (unsigned int d=0; d<dim; ++d)
       {
-        u_n[d].reinit (dof_handler_velocity.n_dofs());
-        u_n_minus_1[d].reinit (dof_handler_velocity.n_dofs());
-        u_star[d].reinit (dof_handler_velocity.n_dofs());
-        force[d].reinit (dof_handler_velocity.n_dofs());
+        u_n.block(d).reinit (dof_handler_velocity.n_dofs());
+        u_n_minus_1.block(d).reinit (dof_handler_velocity.n_dofs());
+        u_star.block(d).reinit (dof_handler_velocity.n_dofs());
+        force.block(d).reinit (dof_handler_velocity.n_dofs());
       }
     v_tmp.reinit (dof_handler_velocity.n_dofs());
     rot_u.reinit (dof_handler_velocity.n_dofs());
@@ -730,9 +736,9 @@ namespace Step35
       {
         vel_exact.set_time (t_0);
         vel_exact.set_component(d);
-        VectorTools::interpolate (dof_handler_velocity, ZeroFunction<dim>(), u_n_minus_1[d]);
+        VectorTools::interpolate (dof_handler_velocity, ZeroFunction<dim>(), u_n_minus_1.block(d));
         vel_exact.advance_time (dt);
-        VectorTools::interpolate (dof_handler_velocity, ZeroFunction<dim>(), u_n[d]);
+        VectorTools::interpolate (dof_handler_velocity, ZeroFunction<dim>(), u_n.block(d));
       }
   }
 
@@ -943,13 +949,12 @@ namespace Step35
   }
 
 
-
   template <int dim>
   void
   NavierStokesProjection<dim>::interpolate_velocity()
   {
     for (unsigned int d=0; d<dim; ++d)
-      u_star[d].equ (2., u_n[d], -1, u_n_minus_1[d]);
+      u_star.block(d).equ (2., u_n.block(d), -1, u_n_minus_1.block(d));
   }
 
 
@@ -974,12 +979,12 @@ namespace Step35
 
     for (unsigned int d=0; d<dim; ++d)
       {
-        force[d] = 0.;
-        v_tmp.equ (2./dt,u_n[d],-.5/dt,u_n_minus_1[d]);
-        vel_Mass.vmult_add (force[d], v_tmp);
+        force.block(d) = 0.;
+        v_tmp.equ (2./dt,u_n.block(d),-.5/dt,u_n_minus_1.block(d));
+        vel_Mass.vmult_add (force.block(d), v_tmp);
 
-        pres_Diff[d].vmult_add (force[d], pres_tmp);
-        u_n_minus_1[d] = u_n[d];
+        pres_Diff[d].vmult_add (force.block(d), pres_tmp);
+        u_n_minus_1.block(d) = u_n.block(d);
 
         vel_it_matrix[d].copy_from (vel_Laplace_plus_Mass);
         vel_it_matrix[d].add (1., vel_Advection);
@@ -1028,8 +1033,8 @@ namespace Step35
         }
         MatrixTools::apply_boundary_values (boundary_values,
                                             vel_it_matrix[d],
-                                            u_n[d],
-                                            force[d]);
+                                            u_n.block(d),
+                                            force.block(d));
       }
 
 
@@ -1049,15 +1054,14 @@ namespace Step35
   }
 
 
-
   template <int dim>
   void
   NavierStokesProjection<dim>::diffusion_component_solve (const unsigned int d)
   {
-    SolverControl solver_control (vel_max_its, vel_eps*force[d].l2_norm());
+    SolverControl solver_control (vel_max_its, vel_eps*force.block(d).l2_norm());
     SolverGMRES<> gmres (solver_control,
                          SolverGMRES<>::AdditionalData (vel_Krylov_size));
-    gmres.solve (vel_it_matrix[d], u_n[d], force[d], prec_velocity[d]);
+    gmres.solve (vel_it_matrix[d], u_n.block(d), force.block(d), prec_velocity[d]);
   }
 
 
@@ -1085,7 +1089,6 @@ namespace Step35
   }
 
 
-
   template <int dim>
   void
   NavierStokesProjection<dim>::
@@ -1097,14 +1100,14 @@ namespace Step35
     cell->get_dof_indices (data.local_dof_indices);
     for (unsigned int d=0; d<dim; ++d)
       {
-        scratch.fe_val.get_function_values (u_star[d], scratch.u_star_tmp);
+        scratch.fe_val.get_function_values (u_star.block(d), scratch.u_star_tmp);
         for (unsigned int q=0; q<scratch.nqp; ++q)
           scratch.u_star_local[q](d) = scratch.u_star_tmp[q];
       }
 
     for (unsigned int d=0; d<dim; ++d)
       {
-        scratch.fe_val.get_function_gradients (u_star[d], scratch.grad_u_star);
+        scratch.fe_val.get_function_gradients (u_star.block(d), scratch.grad_u_star);
         for (unsigned int q=0; q<scratch.nqp; ++q)
           {
             if (d==0)
@@ -1130,7 +1133,6 @@ namespace Step35
   }
 
 
-
   template <int dim>
   void
   NavierStokesProjection<dim>::
@@ -1144,10 +1146,6 @@ namespace Step35
   }
 
 
-
-  // @sect4{<code>NavierStokesProjection::projection_step</code>}
-
-  // This implements the projection step:
   template <int dim>
   void
   NavierStokesProjection<dim>::projection_step (const bool reinit_prec)
@@ -1156,7 +1154,7 @@ namespace Step35
 
     pres_tmp = 0.;
     for (unsigned d=0; d<dim; ++d)
-      pres_Diff[d].Tvmult_add (pres_tmp, u_n[d]);
+      pres_Diff[d].Tvmult_add (pres_tmp, u_n.block(d));
 
     phi_n_minus_1 = phi_n;
 
@@ -1241,7 +1239,7 @@ namespace Step35
               Assert (joint_fe.system_to_base_index(i).first.second < dim,
                       ExcInternalError());
               joint_solution (loc_joint_dof_indices[i]) =
-                u_n[ joint_fe.system_to_base_index(i).first.second ]
+                u_n.block(joint_fe.system_to_base_index(i).first.second)
                 (loc_vel_dof_indices[ joint_fe.system_to_base_index(i).second ]);
               break;
             case 1:
