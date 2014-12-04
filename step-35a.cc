@@ -70,22 +70,9 @@
 #include <cmath>
 #include <iostream>
 
-// Finally this is as in all previous programs:
 namespace Step35
 {
   using namespace dealii;
-
-
-
-  // @sect3{Run time parameters}
-  //
-  // Since our method has several parameters that can be fine-tuned we put
-  // them into an external file, so that they can be determined at run-time.
-  //
-  // This includes, in particular, the formulation of the equation for the
-  // auxiliary variable $\phi$, for which we declare an <code>enum</code>.
-  // Next, we declare a class that is going to read and store all the
-  // parameters that our program needs to run.
   namespace RunTimeParameters
   {
     enum MethodFormulation
@@ -255,19 +242,8 @@ namespace Step35
   }
 
 
-
-  // @sect3{Equation data}
-
-  // In the next namespace, we declare the initial and boundary conditions:
   namespace EquationData
   {
-    // As we have chosen a completely decoupled formulation, we will not take
-    // advantage of deal.II's capabilities to handle vector valued
-    // problems. We do, however, want to use an interface for the equation
-    // data that is somehow dimension independent. To be able to do that, our
-    // functions should be able to know on which spatial component we are
-    // currently working, and we should be able to have a common interface to
-    // do that. The following class is an attempt in that direction.
     template <int dim>
     class MultiComponentFunction: public Function<dim>
     {
@@ -294,8 +270,6 @@ namespace Step35
     }
 
 
-    // With this class defined, we declare classes that describe the boundary
-    // conditions for velocity and pressure:
     template <int dim>
     class Velocity : public MultiComponentFunction<dim>
     {
@@ -394,13 +368,6 @@ namespace Step35
   }
 
 
-
-  // @sect3{The <code>NavierStokesProjection</code> class}
-
-  // Now for the main class of the program. It implements the various versions
-  // of the projection method for Navier-Stokes equations.  The names for all
-  // the methods and member variables should be self-explanatory, taking into
-  // account the implementation details given in the introduction.
   template <int dim>
   class NavierStokesProjection
   {
@@ -647,12 +614,7 @@ namespace Step35
 
 
 
-  // @sect4{ <code>NavierStokesProjection::NavierStokesProjection</code> }
 
-  // In the constructor, we just read all the data from the
-  // <code>Data_Storage</code> object that is passed as an argument, verify
-  // that the data we read is reasonable and, finally, create the
-  // triangulation and load the initial data.
   template <int dim>
   NavierStokesProjection<dim>::NavierStokesProjection(const RunTimeParameters::Data_Storage &data)
     :
@@ -690,8 +652,6 @@ namespace Step35
     initialize();
   }
 
-
-  // @sect4{ <code>NavierStokesProjection::create_triangulation_and_dofs</code> }
 
   // The method that creates the triangulation and refines it the needed
   // number of times.  After creating the triangulation, it creates the mesh
@@ -752,9 +712,6 @@ namespace Step35
   }
 
 
-  // @sect4{ <code>NavierStokesProjection::initialize</code> }
-
-  // This method creates the constant matrices and loads the initial data
   template <int dim>
   void
   NavierStokesProjection<dim>::initialize()
@@ -779,8 +736,6 @@ namespace Step35
       }
   }
 
-
-  // @sect4{ The <code>NavierStokesProjection::initialize_*_matrices</code> methods }
 
   // In this set of methods we initialize the sparsity patterns, the
   // constraints (if any) and assemble the matrices that do not depend on the
@@ -998,8 +953,6 @@ namespace Step35
   }
 
 
-  // @sect4{<code>NavierStokesProjection::diffusion_step</code>}
-
   // The implementation of a diffusion step. Note that the expensive operation
   // is the diffusion solve at the end of the function, which we have to do
   // once for each velocity component. To accelerate things a bit, we allow
@@ -1107,8 +1060,6 @@ namespace Step35
     gmres.solve (vel_it_matrix[d], u_n[d], force[d], prec_velocity[d]);
   }
 
-
-  // @sect4{ The <code>NavierStokesProjection::assemble_advection_term</code> method and related}
 
   // The following few functions deal with assembling the advection terms,
   // which is the part of the system matrix for the diffusion step that
@@ -1258,27 +1209,6 @@ namespace Step35
   }
 
 
-  // @sect4{ <code>NavierStokesProjection::output_results</code> }
-
-  // This method plots the current solution. The main difficulty is that we
-  // want to create a single output file that contains the data for all
-  // velocity components, the pressure, and also the vorticity of the flow. On
-  // the other hand, velocities and the pressure live on separate DoFHandler
-  // objects, and so can't be written to the same file using a single DataOut
-  // object. As a consequence, we have to work a bit harder to get the various
-  // pieces of data into a single DoFHandler object, and then use that to
-  // drive graphical output.
-  //
-  // We will not elaborate on this process here, but rather refer to step-32,
-  // where a similar procedure is used (and is documented) to
-  // create a joint DoFHandler object for all variables.
-  //
-  // Let us also note that we here compute the vorticity as a scalar quantity
-  // in a separate function, using the $L^2$ projection of the quantity
-  // $\text{curl} u$ onto the finite element space used for the components of
-  // the velocity. In principle, however, we could also have computed as a
-  // pointwise quantity from the velocity, and do so through the
-  // DataPostprocessor mechanism discussed in step-29 and step-33.
   template <int dim>
   void NavierStokesProjection<dim>::output_results (const unsigned int step)
   {
@@ -1364,10 +1294,7 @@ namespace Step35
   }
 }
 
-// @sect3{ The main function }
 
-// The main function looks very much like in all the other tutorial programs,
-// so there is little to comment on here:
 int main(int argc, char** argv)
 {
   try
