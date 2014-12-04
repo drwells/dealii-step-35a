@@ -394,24 +394,24 @@ namespace Step35
     const double       dt;
     const double       t_0, T, Re;
 
-    EquationData::Velocity<dim>       vel_exact;
-    std::map<types::global_dof_index, double>    boundary_values;
-    std::vector<types::boundary_id> boundary_indicators;
+    EquationData::Velocity<dim>               vel_exact;
+    std::map<types::global_dof_index, double> boundary_values;
+    std::vector<types::boundary_id>           boundary_indicators;
 
     Triangulation<dim> triangulation;
 
-    FE_Q<dim>          fe_velocity;
-    FE_Q<dim>          fe_pressure;
+    FE_Q<dim> fe_velocity;
+    FE_Q<dim> fe_pressure;
 
-    DoFHandler<dim>    dof_handler_velocity;
-    DoFHandler<dim>    dof_handler_pressure;
+    DoFHandler<dim> dof_handler_velocity;
+    DoFHandler<dim> dof_handler_pressure;
 
-    QGauss<dim>        quadrature_pressure;
-    QGauss<dim>        quadrature_velocity;
+    QGauss<dim> quadrature_pressure;
+    QGauss<dim> quadrature_velocity;
 
-    SparsityPattern    sparsity_pattern_velocity;
-    SparsityPattern    sparsity_pattern_pressure;
-    SparsityPattern    sparsity_pattern_pres_vel;
+    SparsityPattern sparsity_pattern_velocity;
+    SparsityPattern sparsity_pattern_pressure;
+    SparsityPattern sparsity_pattern_pres_vel;
 
     SparseMatrix<double> vel_Laplace_plus_Mass;
     SparseMatrix<double> vel_it_matrix[dim];
@@ -423,20 +423,20 @@ namespace Step35
     SparseMatrix<double> pres_Diff[dim];
     SparseMatrix<double> pres_iterative;
 
-    Vector<double> pres_n;
-    Vector<double> pres_n_minus_1;
-    Vector<double> phi_n;
-    Vector<double> phi_n_minus_1;
+    Vector<double>      pres_n;
+    Vector<double>      pres_n_minus_1;
+    Vector<double>      phi_n;
+    Vector<double>      phi_n_minus_1;
     BlockVector<double> u_n;
     BlockVector<double> u_n_minus_1;
     BlockVector<double> u_star;
     BlockVector<double> force;
-    Vector<double> v_tmp;
-    Vector<double> pres_tmp;
-    Vector<double> rot_u;
+    Vector<double>      v_tmp;
+    Vector<double>      pres_tmp;
+    Vector<double>      rot_u;
 
-    SparseILU<double> prec_velocity[dim];
-    SparseILU<double> prec_pres_Laplace;
+    SparseILU<double>   prec_velocity[dim];
+    SparseILU<double>   prec_pres_Laplace;
     SparseDirectUMFPACK prec_mass;
     SparseDirectUMFPACK prec_vel_mass;
 
