@@ -67,9 +67,18 @@
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/numerics/data_out.h>
 
+#include <deal.II/bundled/boost/archive/text_oarchive.hpp>
+// These two are needed to get around issue 278; see
+// https://github.com/dealii/dealii/pull/278
+#include <deal.II/dofs/dof_faces.h>
+#include <deal.II/dofs/dof_levels.h>
+
+#include <string>
 #include <fstream>
 #include <cmath>
 #include <iostream>
+#include <memory>
+
 #include "h5.h"
 
 namespace Step35
@@ -612,9 +621,9 @@ namespace Step35
     void diffusion_component_solve (const unsigned int d);
 
     void output_results (const unsigned int step);
+
+    void assemble_vorticity (const bool reinit_prec);
   };
-
-
 
 
   template <int dim>
@@ -1210,12 +1219,33 @@ namespace Step35
   template <int dim>
   void NavierStokesProjection<dim>::output_results (const unsigned int step)
   {
-    const FESystem<dim> joint_fe (fe_velocity, dim,
-                                  fe_pressure, 1);
+    int add_vorticity = (dim == 2) ? 1 : 0;
+    std::vector<std::string> joint_solution_names (dim, "v");
+    joint_solution_names.push_back ("p");
+    if (add_vorticity)
+      {
+        assemble_vorticity ( (step == 1) );
+        joint_solution_names.push_back ("rot_u");
+      }
+    // Unfortunately, the FESystem constructor depends on the dimensionality, so
+    // (without a reinit function) we must use dynamic allocation.
+    std::unique_ptr<FESystem<dim>> joint_fe_ptr;
+    if (dim == 2)
+      {
+        joint_fe_ptr = std::unique_ptr<FESystem<dim>>
+          (new FESystem<dim> (fe_velocity, dim, fe_pressure, 1, fe_velocity, 1));
+      }
+    else
+      {
+        joint_fe_ptr = std::unique_ptr<FESystem<dim>>
+          (new FESystem<dim> (fe_velocity, dim, fe_pressure, 1));
+      }
+    auto &joint_fe = *joint_fe_ptr;
+
     DoFHandler<dim> joint_dof_handler (triangulation);
     joint_dof_handler.distribute_dofs (joint_fe);
     Assert (joint_dof_handler.n_dofs() ==
-            (dim*dof_handler_velocity.n_dofs() +
+            ((dim + add_vorticity)*dof_handler_velocity.n_dofs() +
              dof_handler_pressure.n_dofs()),
             ExcInternalError());
     static Vector<double> joint_solution (joint_dof_handler.n_dofs());
@@ -1248,21 +1278,28 @@ namespace Step35
               joint_solution (loc_joint_dof_indices[i]) =
                 pres_n (loc_pres_dof_indices[ joint_fe.system_to_base_index(i).second ]);
               break;
+            case 2:
+              Assert (joint_fe.system_to_base_index(i).first.second == 0,
+                      ExcInternalError());
+              joint_solution (loc_joint_dof_indices[i]) =
+                rot_u (loc_vel_dof_indices[ joint_fe.system_to_base_index(i).second ]);
+              break;
             default:
               Assert (false, ExcInternalError());
             }
       }
-    std::vector<std::string> joint_solution_names (dim, "v");
-    joint_solution_names.push_back ("p");
     DataOut<dim> data_out;
     data_out.attach_dof_handler (joint_dof_handler);
     std::vector< DataComponentInterpretation::DataComponentInterpretation >
-    component_interpretation (dim+1,
+    component_interpretation (dim + 1 + add_vorticity,
                               DataComponentInterpretation::component_is_part_of_vector);
     component_interpretation[dim]
       = DataComponentInterpretation::component_is_scalar;
-    component_interpretation[dim+1]
-      = DataComponentInterpretation::component_is_scalar;
+    if (add_vorticity)
+      {
+        component_interpretation[dim + 1]
+          = DataComponentInterpretation::component_is_scalar;
+      }
     data_out.add_data_vector (joint_solution,
                               joint_solution_names,
                               DataOut<dim>::type_dof_data,
@@ -1274,21 +1311,82 @@ namespace Step35
     std::string mesh_file_name = "mesh.h5";
     std::string xdmf_filename = "solution.xdmf";
 
-    DataOutBase::DataOutFilter data_filter(DataOutBase::DataOutFilterFlags(true, true));
+    DataOutBase::DataOutFilter data_filter
+      (DataOutBase::DataOutFilterFlags(true, true));
     data_out.write_filtered_data(data_filter);
     data_out.write_hdf5_parallel(data_filter, write_mesh, mesh_file_name.c_str(),
                                  h5_solution_file_name.c_str(), MPI_COMM_WORLD);
-        // only save the mesh once
+    // only save the triangulation, FE, and DoFHandler once
     if (write_mesh)
     {
         write_mesh = false;
+        std::ofstream fe_file_stream("finite_element.txt");
+        fe_file_stream << fe_velocity.get_name () << std::endl;
+
+        for (unsigned int i = 0; i < 2; ++i)
+          {
+            std::string file_name;
+            file_name = ((i == 0) ? "dof_handler.txt" : "triangulation.txt");
+            std::filebuf file_buffer;
+            file_buffer.open(file_name.c_str (), std::ios::out);
+
+            std::ostream out_stream (&file_buffer);
+            boost::archive::text_oarchive archive (out_stream);
+            (i == 0) ? archive << dof_handler_velocity : archive << triangulation;
+          }
     }
-    auto new_xdmf_entry = data_out.create_xdmf_entry (data_filter,
-                                                      mesh_file_name.c_str(),
-                                                      h5_solution_file_name.c_str(),
-                                                      t_0 + step*dt, MPI_COMM_WORLD);
+    auto new_xdmf_entry = data_out.create_xdmf_entry
+      (data_filter, mesh_file_name.c_str (), h5_solution_file_name.c_str (),
+       t_0 + step*dt, MPI_COMM_WORLD);
     xdmf_entries.push_back(std::move(new_xdmf_entry));
     data_out.write_xdmf_file(xdmf_entries, xdmf_filename.c_str(), MPI_COMM_WORLD);
+
+    std::string snapshot_name = "snapshot-" + Utilities::int_to_string(step, 7)
+      + ".h5";
+    H5::save_block_vector(snapshot_name, u_n);
+  }
+
+
+  template <int dim>
+  void NavierStokesProjection<dim>::assemble_vorticity (const bool reinit_prec)
+  {
+    Assert (dim == 2, ExcNotImplemented());
+    if (reinit_prec)
+      prec_vel_mass.initialize (vel_Mass);
+
+    FEValues<dim> fe_val_vel (fe_velocity, quadrature_velocity,
+                              update_gradients |
+                              update_JxW_values |
+                              update_values);
+    const unsigned int dpc = fe_velocity.dofs_per_cell,
+                       nqp = quadrature_velocity.size();
+    std::vector<types::global_dof_index> ldi (dpc);
+    Vector<double> loc_rot (dpc);
+
+    std::vector< Tensor<1,dim> > grad_u1 (nqp), grad_u2 (nqp);
+    rot_u = 0.;
+
+    typename DoFHandler<dim>::active_cell_iterator
+    cell = dof_handler_velocity.begin_active(),
+    end  = dof_handler_velocity.end();
+    for (; cell != end; ++cell)
+      {
+        fe_val_vel.reinit (cell);
+        cell->get_dof_indices (ldi);
+        fe_val_vel.get_function_gradients (u_n.block(0), grad_u1);
+        fe_val_vel.get_function_gradients (u_n.block(1), grad_u2);
+        loc_rot = 0.;
+        for (unsigned int q=0; q<nqp; ++q)
+          for (unsigned int i=0; i<dpc; ++i)
+            loc_rot(i) += (grad_u2[q][0] - grad_u1[q][1]) *
+                          fe_val_vel.shape_value (i, q) *
+                          fe_val_vel.JxW(q);
+
+        for (unsigned int i=0; i<dpc; ++i)
+          rot_u (ldi[i]) += loc_rot(i);
+      }
+
+    prec_vel_mass.solve (rot_u);
   }
 }
 
