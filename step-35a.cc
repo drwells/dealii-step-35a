@@ -19,11 +19,6 @@
  */
 
 
-// @sect3{Include files}
-
-// We start by including all the necessary deal.II header files and some C++
-// related ones. Each one of them has been discussed in previous tutorial
-// programs, so we will not get into details here.
 #include <deal.II/base/parameter_handler.h>
 #include <deal.II/base/point.h>
 #include <deal.II/base/function.h>
@@ -117,9 +112,7 @@ namespace Step35
       ParameterHandler prm;
     };
 
-    // In the constructor of this class we declare all the parameters. The
-    // details of how this works have been discussed elsewhere, for example in
-    // step-19 and step-29.
+
     Data_Storage::Data_Storage()
     {
       prm.declare_entry ("Method_Form", "rotational",
@@ -473,31 +466,6 @@ namespace Step35
 
     void initialize_pressure_matrices();
 
-    // The next few structures and functions are for doing various things in
-    // parallel. They follow the scheme laid out in @ref threads, using the
-    // WorkStream class. As explained there, this requires us to declare two
-    // structures for each of the assemblers, a per-task data and a scratch
-    // data structure. These are then handed over to functions that assemble
-    // local contributions and that copy these local contributions to the
-    // global objects.
-    //
-    // One of the things that are specific to this program is that we don't
-    // just have a single DoFHandler object that represents both the
-    // velocities and the pressure, but we use individual DoFHandler objects
-    // for these two kinds of variables. We pay for this optimization when we
-    // want to assemble terms that involve both variables, such as the
-    // divergence of the velocity and the gradient of the pressure, times the
-    // respective test functions. When doing so, we can't just anymore use a
-    // single FEValues object, but rather we need two, and they need to be
-    // initialized with cell iterators that point to the same cell in the
-    // triangulation but different DoFHandlers.
-    //
-    // To do this in practice, we declare a "synchronous" iterator -- an
-    // object that internally consists of several (in our case two) iterators,
-    // and each time the synchronous iteration is moved up one step, each of
-    // the iterators stored internally is moved up one step as well, thereby
-    // always staying in sync. As it so happens, there is a deal.II class that
-    // facilitates this sort of thing.
     typedef std::tuple< typename DoFHandler<dim>::active_cell_iterator,
             typename DoFHandler<dim>::active_cell_iterator
             > IteratorTuple;
@@ -561,8 +529,6 @@ namespace Step35
 
     void copy_gradient_local_to_global (const InitGradPerTaskData &data);
 
-    // The same general layout also applies to the following classes and
-    // functions implementing the assembly of the advection term:
     void assemble_advection_term();
 
     struct AdvectionPerTaskData
@@ -615,9 +581,6 @@ namespace Step35
 
     void copy_advection_local_to_global (const AdvectionPerTaskData &data);
 
-    // The final few functions implement the diffusion solve as well as
-    // postprocessing the output, including computing the curl of the
-    // velocity:
     void diffusion_component_solve (const unsigned int d);
 
     void output_results (const unsigned int step);
@@ -668,10 +631,6 @@ namespace Step35
   }
 
 
-  // The method that creates the triangulation and refines it the needed
-  // number of times.  After creating the triangulation, it creates the mesh
-  // dependent data, i.e. it distributes degrees of freedom and renumbers
-  // them, and initializes the matrices and vectors that we will use.
   template <int dim>
   void
   NavierStokesProjection<dim>::
@@ -752,17 +711,6 @@ namespace Step35
   }
 
 
-  // In this set of methods we initialize the sparsity patterns, the
-  // constraints (if any) and assemble the matrices that do not depend on the
-  // timestep <code>dt</code>. Note that for the Laplace and mass matrices, we
-  // can use functions in the library that do this. Because the expensive
-  // operations of this function -- creating the two matrices -- are entirely
-  // independent, we could in principle mark them as tasks that can be worked
-  // on in %parallel using the Threads::new_task functions. We won't do that
-  // here since these functions internally already are parallelized, and in
-  // particular because the current function is only called once per program
-  // run and so does not incur a cost in each time step. The necessary
-  // modifications would be quite straightforward, however.
   template <int dim>
   void
   NavierStokesProjection<dim>::initialize_velocity_matrices()
@@ -789,8 +737,6 @@ namespace Step35
                                           vel_Laplace);
   }
 
-  // The initialization of the matrices that act on the pressure space is
-  // similar to the ones that act on the velocity space.
   template <int dim>
   void
   NavierStokesProjection<dim>::initialize_pressure_matrices()
@@ -815,13 +761,6 @@ namespace Step35
   }
 
 
-  // For the gradient operator, we start by initializing the sparsity pattern
-  // and compressing it.  It is important to notice here that the gradient
-  // operator acts from the pressure space into the velocity space, so we have
-  // to deal with two different finite element spaces. To keep the loops
-  // synchronized, we use the <code>typedef</code>'s that we have defined
-  // before, namely <code>PairedIterators</code> and
-  // <code>IteratorPair</code>.
   template <int dim>
   void
   NavierStokesProjection<dim>::initialize_gradient_operator()
@@ -900,28 +839,6 @@ namespace Step35
   }
 
 
-  // @sect4{ <code>NavierStokesProjection::run</code> }
-
-  // This is the time marching function, which starting at <code>t_0</code>
-  // advances in time using the projection method with time step
-  // <code>dt</code> until <code>T</code>.
-  //
-  // Its second parameter, <code>verbose</code> indicates whether the function
-  // should output information what it is doing at any given moment: for
-  // example, it will say whether we are working on the diffusion, projection
-  // substep; updating preconditioners etc. Rather than implementing this
-  // output using code like
-  // @code
-  //   if (verbose) std::cout << "something";
-  // @endcode
-  // we use the ConditionalOStream class to do that for us. That
-  // class takes an output stream and a condition that indicates whether the
-  // things you pass to it should be passed through to the given output
-  // stream, or should just be ignored. This way, above code simply becomes
-  // @code
-  //   verbose_cout << "something";
-  // @endcode
-  // and does the right thing in either case.
   template <int dim>
   void
   NavierStokesProjection<dim>::run (const bool verbose,
@@ -1187,12 +1104,6 @@ namespace Step35
   }
 
 
-  // @sect4{ <code>NavierStokesProjection::update_pressure</code> }
-
-  // This is the pressure update step of the projection method. It implements
-  // the standard formulation of the method, that is @f[ p^{n+1} = p^n +
-  // \phi^{n+1}, @f] or the rotational form, which is @f[ p^{n+1} = p^n +
-  // \phi^{n+1} - \frac{1}{Re} \nabla\cdot u^{n+1}.  @f]
   template <int dim>
   void
   NavierStokesProjection<dim>::update_pressure (const bool reinit_prec)
