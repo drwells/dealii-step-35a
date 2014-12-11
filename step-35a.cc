@@ -428,8 +428,8 @@ namespace Step35
     Vector<double>      pres_tmp;
     Vector<double>      rot_u;
 
-    SparseILU<double>   prec_velocity[dim];
-    SparseILU<double>   prec_pres_Laplace;
+    PreconditionChebyshev<> prec_velocity[dim];
+    PreconditionChebyshev<> prec_pres_Laplace;
     SparseDirectUMFPACK prec_mass;
     SparseDirectUMFPACK prec_vel_mass;
 
@@ -968,10 +968,11 @@ namespace Step35
     for (unsigned int d=0; d<dim; ++d)
       {
         if (reinit_prec)
-          prec_velocity[d].initialize (vel_it_matrix[d],
-                                       SparseILU<double>::
-                                       AdditionalData (vel_diag_strength,
-                                                       vel_off_diagonals));
+          {
+            prec_velocity[d].initialize (vel_it_matrix[d],
+                                         PreconditionChebyshev<>::
+                                         AdditionalData (0));
+          }
         tasks += Threads::new_task (&NavierStokesProjection<dim>::
                                     diffusion_component_solve,
                                     *this, d);
@@ -1092,9 +1093,11 @@ namespace Step35
     MatrixTools::apply_boundary_values (bval, pres_iterative, phi_n, pres_tmp);
 
     if (reinit_prec)
-      prec_pres_Laplace.initialize(pres_iterative,
-                                   SparseILU<double>::AdditionalData (vel_diag_strength,
-                                       vel_off_diagonals) );
+      {
+        prec_pres_Laplace.initialize(pres_iterative,
+                                     PreconditionChebyshev<>::AdditionalData(2));
+      }
+
 
     SolverControl solvercontrol (vel_max_its, vel_eps*pres_tmp.l2_norm());
     SolverCG<> cg (solvercontrol);
