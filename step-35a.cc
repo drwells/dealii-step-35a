@@ -1225,8 +1225,8 @@ namespace Step35
     DataOutBase::DataOutFilter data_filter
       (DataOutBase::DataOutFilterFlags(true, true));
     data_out.write_filtered_data(data_filter);
-    data_out.write_hdf5_parallel(data_filter, write_mesh, mesh_file_name.c_str(),
-                                 h5_solution_file_name.c_str(), MPI_COMM_WORLD);
+    data_out.write_hdf5_parallel(data_filter, write_mesh, mesh_file_name,
+                                 h5_solution_file_name, MPI_COMM_WORLD);
     // only save the triangulation, FE, and DoFHandler once
     if (write_mesh)
     {
@@ -1239,7 +1239,7 @@ namespace Step35
             std::string file_name;
             file_name = ((i == 0) ? "dof_handler.txt" : "triangulation.txt");
             std::filebuf file_buffer;
-            file_buffer.open(file_name.c_str (), std::ios::out);
+            file_buffer.open(file_name, std::ios::out);
 
             std::ostream out_stream (&file_buffer);
             boost::archive::text_oarchive archive (out_stream);
@@ -1247,10 +1247,10 @@ namespace Step35
           }
     }
     auto new_xdmf_entry = data_out.create_xdmf_entry
-      (data_filter, mesh_file_name.c_str (), h5_solution_file_name.c_str (),
+      (data_filter, mesh_file_name, h5_solution_file_name,
        t_0 + step*dt, MPI_COMM_WORLD);
     xdmf_entries.push_back(std::move(new_xdmf_entry));
-    data_out.write_xdmf_file(xdmf_entries, xdmf_filename.c_str(), MPI_COMM_WORLD);
+    data_out.write_xdmf_file(xdmf_entries, xdmf_filename, MPI_COMM_WORLD);
 
     std::string snapshot_name = "snapshot-" + Utilities::int_to_string(step, 7)
       + ".h5";
