@@ -1311,7 +1311,8 @@ int main(int argc, char** argv)
       RunTimeParameters::Data_Storage data;
       data.read_data ("parameter-file.prm");
 
-      Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
+      Utilities::MPI::MPI_InitFinalize mpi_initialization
+        (argc, argv, numbers::invalid_unsigned_int);
       {
         deallog.depth_console (data.verbose ? 2 : 0);
 
