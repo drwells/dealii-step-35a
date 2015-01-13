@@ -747,10 +747,10 @@ namespace Step35
         vel_exact.set_time (t_0);
         vel_exact.set_component(d);
         VectorTools::interpolate
-          (dof_handler_velocity, ZeroFunction<dim>(), u_n_minus_1.block(d));
+        (dof_handler_velocity, ZeroFunction<dim>(), u_n_minus_1.block(d));
         vel_exact.advance_time (dt);
         VectorTools::interpolate
-          (dof_handler_velocity, ZeroFunction<dim>(), u_n.block(d));
+        (dof_handler_velocity, ZeroFunction<dim>(), u_n.block(d));
       }
   }
 
@@ -760,7 +760,7 @@ namespace Step35
   NavierStokesProjection<dim>::initialize_velocity_matrices()
   {
     CompressedSparsityPattern compressed_sparsity_pattern_velocity
-      (dof_handler_velocity.n_dofs(), dof_handler_velocity.n_dofs());
+    (dof_handler_velocity.n_dofs(), dof_handler_velocity.n_dofs());
     DoFTools::make_sparsity_pattern (dof_handler_velocity,
                                      compressed_sparsity_pattern_velocity);
     sparsity_pattern_velocity.copy_from (compressed_sparsity_pattern_velocity);
@@ -786,9 +786,9 @@ namespace Step35
   NavierStokesProjection<dim>::initialize_pressure_matrices()
   {
     CompressedSparsityPattern compressed_sparsity_pattern_pressure
-      (dof_handler_pressure.n_dofs(), dof_handler_pressure.n_dofs());
+    (dof_handler_pressure.n_dofs(), dof_handler_pressure.n_dofs());
     DoFTools::make_sparsity_pattern
-      (dof_handler_pressure, compressed_sparsity_pattern_pressure);
+    (dof_handler_pressure, compressed_sparsity_pattern_pressure);
     sparsity_pattern_pressure.copy_from (compressed_sparsity_pattern_pressure);
 
     sparsity_pattern_pressure.compress();
@@ -811,7 +811,7 @@ namespace Step35
   NavierStokesProjection<dim>::initialize_gradient_operator()
   {
     CompressedSparsityPattern compressed_sparsity_pattern_pres_vel
-      (dof_handler_velocity.n_dofs(), dof_handler_pressure.n_dofs());
+    (dof_handler_velocity.n_dofs(), dof_handler_pressure.n_dofs());
     DoFTools::make_sparsity_pattern (dof_handler_velocity,
                                      dof_handler_pressure,
                                      compressed_sparsity_pattern_pres_vel);
@@ -877,8 +877,8 @@ namespace Step35
     for (unsigned int i = 0; i < data.vel_dpc; ++i)
       for (unsigned int j = 0; j < data.pres_dpc; ++j)
         pres_Diff[data.d].add
-          (data.vel_local_dof_indices[i], data.pres_local_dof_indices[j],
-           data.local_grad (i, j));
+        (data.vel_local_dof_indices[i], data.pres_local_dof_indices[j],
+         data.local_grad (i, j));
   }
 
 
