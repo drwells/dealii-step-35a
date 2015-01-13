@@ -286,6 +286,10 @@ namespace Step35
       virtual void value_list (const std::vector< Point<dim> > &points,
                                std::vector<double> &values,
                                const unsigned int component = 0) const;
+      virtual void set_geometry (double height, double width);
+    private:
+      double width;
+      double height;
     };
 
 
@@ -316,14 +320,14 @@ namespace Step35
       if (this->comp == 0)
         {
           const double Um = 1.5;
-          const double H  = 4.5;
           if (dim == 2)
             {
-              return 4.0*Um*p(1)*(H - p(1))/(H*H);
+              return 4.0*Um*p(1)*(width - p(1))/(width*width);
             }
           else if (dim == 3)
             {
-              return 4.0*Um*p(1)*(H - p(1))*p(2)*(H - p(2))/(H*H);
+              return 4.0*Um*p(1)*(width - p(1))*p(2)*(height - p(2))
+                     /(height*height);
             }
           else
             {
@@ -332,6 +336,14 @@ namespace Step35
         }
       else
         return 0.;
+    }
+
+    template<int dim>
+    void Velocity<dim>::set_geometry (const double height,
+                                      const double width)
+    {
+      this->height = height;
+      this->width = width;
     }
 
     template <int dim>
@@ -436,6 +448,9 @@ namespace Step35
     PreconditionChebyshev<> prec_pres_Laplace;
     SparseDirectUMFPACK prec_mass;
     SparseDirectUMFPACK prec_vel_mass;
+
+    double height;
+    double width;
 
     DeclException2 (ExcInvalidTimeStep,
                     double, double,
@@ -661,6 +676,29 @@ namespace Step35
     dof_handler_velocity.distribute_dofs (fe_velocity);
     dof_handler_pressure.distribute_dofs (fe_pressure);
 
+    // determine the maximum z coordinate.
+    typename Triangulation<dim>::cell_iterator ti = triangulation.begin();
+    for (; ti != triangulation.end(); ++ti)
+      {
+        for (unsigned int i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i)
+          {
+            if (dim == 3)
+              {
+                if (ti->vertex(i)[dim - 1] > height)
+                  {
+                    height = ti->vertex(i)[dim - 1];
+                  }
+              }
+            if (ti->vertex(i)[1] > width)
+              {
+                width = ti->vertex(i)[1];
+              }
+          }
+      }
+
+    std::cout << "width: " << width << std::endl;
+    std::cout << "height: " << height << std::endl;
+
     initialize_velocity_matrices();
     initialize_pressure_matrices();
     initialize_gradient_operator();
@@ -853,6 +891,7 @@ namespace Step35
 
     const unsigned int n_steps =  static_cast<unsigned int>((T - t_0)/dt);
     vel_exact.set_time (2.*dt);
+    vel_exact.set_geometry (height, width);
     output_results(1);
     for (unsigned int n = 2; n <= n_steps; ++n)
       {
