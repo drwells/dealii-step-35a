@@ -6,6 +6,11 @@ This project is a modified copy of step-35 in deal.II. The important changes are
 * The code can now run in 3D (some of the `DoFHandler` code needed to be modifed)
 * The code now outputs binary HDF5 files
 
+Other Changes
+-------------
+I found (by trial and error) that setting `off_diagonals = 5` in the parameter file
+significantly increased the speed.
+
 Files
 -----
 This project comes with a few sample meshes:

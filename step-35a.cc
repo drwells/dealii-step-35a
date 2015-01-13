@@ -432,7 +432,7 @@ namespace Step35
     Vector<double>      pres_tmp;
     Vector<double>      rot_u;
 
-    PreconditionChebyshev<> prec_velocity[dim];
+    SparseILU<double>   prec_velocity[dim];
     PreconditionChebyshev<> prec_pres_Laplace;
     SparseDirectUMFPACK prec_mass;
     SparseDirectUMFPACK prec_vel_mass;
@@ -659,9 +659,7 @@ namespace Step35
     boundary_indicators = triangulation.get_boundary_indicators();
 
     dof_handler_velocity.distribute_dofs (fe_velocity);
-    DoFRenumbering::boost::Cuthill_McKee (dof_handler_velocity);
     dof_handler_pressure.distribute_dofs (fe_pressure);
-    DoFRenumbering::boost::Cuthill_McKee (dof_handler_pressure);
 
     initialize_velocity_matrices();
     initialize_pressure_matrices();
@@ -977,8 +975,9 @@ namespace Step35
         if (reinit_prec)
           {
             prec_velocity[d].initialize (vel_it_matrix[d],
-                                         PreconditionChebyshev<>::
-                                         AdditionalData (0));
+                                         SparseILU<double>::
+                                         AdditionalData (vel_diag_strength,
+                                                         vel_off_diagonals));
           }
         tasks += Threads::new_task (&NavierStokesProjection<dim>::
                                     diffusion_component_solve,

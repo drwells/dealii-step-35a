@@ -30,9 +30,9 @@ subsection Data solve velocity
   set max_iterations = 1000  # maximal number of iterations that GMRES must make
   set eps            = 1e-8  # stopping criterion
   set Krylov_size    = 30    # size of the Krylov subspace to be used in GMRES
-  set off_diagonals  = 70    # number of off diagonals that ILU must compute
-  set diag_strength  = 0.1  # diagonal strengthening value
-  set update_prec    = 10    # this number indicates how often the preconditioner must be updated
+  set off_diagonals  = 0     # number of off diagonals that ILU must compute
+  set diag_strength  = 0.00  # diagonal strengthening value
+  set update_prec    = 50    # this number indicates how often the preconditioner must be updated
 end
 
 #The output frequency
