@@ -1268,7 +1268,7 @@ namespace Step35
     data_out.build_patches (deg + 2);
 
     std::string h5_solution_file_name = "solution-"
-                                        + Utilities::int_to_string(step, 7) + ".h5";
+                                        + Utilities::int_to_string(step, 9) + ".h5";
     std::string mesh_file_name = "mesh.h5";
     std::string xdmf_filename = "solution.xdmf";
 
@@ -1302,7 +1302,7 @@ namespace Step35
     xdmf_entries.push_back(std::move(new_xdmf_entry));
     data_out.write_xdmf_file(xdmf_entries, xdmf_filename, MPI_COMM_WORLD);
 
-    std::string snapshot_name = "snapshot-" + Utilities::int_to_string(step, 7)
+    std::string snapshot_name = "snapshot-" + Utilities::int_to_string(step, 9)
                                 + ".h5";
     H5::save_block_vector(snapshot_name, u_n);
   }
