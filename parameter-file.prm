@@ -8,6 +8,9 @@ subsection Physical data
   set initial_time = 0.
   set final_time   = 50
   set Reynolds     = 200
+  # set load_checkpoint_file_name = checkpoint_save.h5
+  # set save_checkpoint_file_name = checkpoint_save_final.h5
+  set save_checkpoint_file_name = checkpoint_save.h5
 end
 
 subsection Time step data

@@ -97,6 +97,8 @@ namespace Step35
       double initial_time,
              final_time,
              Reynolds;
+      std::string load_checkpoint_file_name;
+      std::string save_checkpoint_file_name;
       double dt;
       unsigned int n_global_refines,
                pressure_degree;
@@ -130,6 +132,10 @@ namespace Step35
         prm.declare_entry ("Reynolds", "1.",
                            Patterns::Double (0.),
                            " The Reynolds number. ");
+        prm.declare_entry ("load_checkpoint_file_name", "", Patterns::Anything(),
+                           "file containing the checkpoint data.");
+        prm.declare_entry ("save_checkpoint_file_name", "", Patterns::Anything(),
+                           "file in which to save checkpoint data.");
       }
       prm.leave_subsection();
 
@@ -212,6 +218,8 @@ namespace Step35
         initial_time = prm.get_double ("initial_time");
         final_time   = prm.get_double ("final_time");
         Reynolds     = prm.get_double ("Reynolds");
+        load_checkpoint_file_name = prm.get ("load_checkpoint_file_name");
+        save_checkpoint_file_name = prm.get ("save_checkpoint_file_name");
       }
       prm.leave_subsection();
 
@@ -402,6 +410,8 @@ namespace Step35
     const unsigned int deg;
     const double       dt;
     const double       t_0, T, Re;
+    std::string load_checkpoint_file_name;
+    std::string save_checkpoint_file_name;
 
     EquationData::Velocity<dim>               vel_exact;
     std::map<types::global_dof_index, double> boundary_values;
@@ -462,6 +472,10 @@ namespace Step35
 
     void initialize();
 
+    void load_checkpoint();
+
+    void save_checkpoint();
+
     void interpolate_velocity ();
 
     void diffusion_step (const bool reinit_prec);
@@ -478,6 +492,7 @@ namespace Step35
     double       vel_eps;
     double       vel_diag_strength;
 
+    bool vorticity_preconditioner_assembled;
     std::vector<XDMFEntry> xdmf_entries;
     bool                   write_mesh;
 
@@ -603,9 +618,9 @@ namespace Step35
 
     void diffusion_component_solve (const unsigned int d);
 
-    void output_results (const unsigned int step);
+    void output_results (const unsigned int step, const double time);
 
-    void assemble_vorticity (const bool reinit_prec);
+    void assemble_vorticity ();
   };
 
 
@@ -619,6 +634,8 @@ namespace Step35
     t_0 (data.initial_time),
     T (data.final_time),
     Re (data.Reynolds),
+    load_checkpoint_file_name (data.load_checkpoint_file_name),
+    save_checkpoint_file_name (data.save_checkpoint_file_name),
     vel_exact (data.initial_time),
     fe_velocity (deg+1),
     fe_pressure (deg),
@@ -636,6 +653,7 @@ namespace Step35
     vel_update_prec (data.vel_update_prec),
     vel_eps (data.vel_eps),
     vel_diag_strength (data.vel_diag_strength),
+    vorticity_preconditioner_assembled(false),
     xdmf_entries(),
     write_mesh(true)
   {
@@ -752,6 +770,50 @@ namespace Step35
         VectorTools::interpolate
         (dof_handler_velocity, ZeroFunction<dim>(), u_n.block(d));
       }
+  }
+
+  template<int dim>
+  void
+  NavierStokesProjection<dim>::load_checkpoint()
+  {
+    if (load_checkpoint_file_name.size() == 0)
+      {
+        return;
+      }
+    for (unsigned int block_n = 0; block_n < dim; ++block_n)
+      {
+        H5::load(load_checkpoint_file_name, "u_n" + Utilities::int_to_string(block_n),
+                 u_n.block(block_n));
+        H5::load(load_checkpoint_file_name, "u_n_minus_1" + Utilities::int_to_string(block_n),
+                 u_n_minus_1.block(block_n));
+      }
+    H5::load(load_checkpoint_file_name, std::string("phi_n"), phi_n);
+    H5::load(load_checkpoint_file_name, std::string("phi_n_minus_1"), phi_n_minus_1);
+    H5::load(load_checkpoint_file_name, std::string("pres_n"), pres_n);
+    H5::load(load_checkpoint_file_name, std::string("pres_n_minus_1"), pres_n_minus_1);
+  }
+
+
+  template<int dim>
+  void
+  NavierStokesProjection<dim>::save_checkpoint()
+  {
+    if (save_checkpoint_file_name.size() == 0)
+      {
+        return;
+      }
+    std::cout << "outfile name is '" << save_checkpoint_file_name << "'" << std::endl;
+    for (unsigned int block_n = 0; block_n < dim; ++block_n)
+      {
+        H5::save(save_checkpoint_file_name, "u_n" + Utilities::int_to_string(block_n),
+                 u_n.block(block_n));
+        H5::save(save_checkpoint_file_name, "u_n_minus_1" + Utilities::int_to_string(block_n),
+                 u_n_minus_1.block(block_n));
+      }
+    H5::save(save_checkpoint_file_name, std::string("phi_n"), phi_n);
+    H5::save(save_checkpoint_file_name, std::string("phi_n_minus_1"), phi_n_minus_1);
+    H5::save(save_checkpoint_file_name, std::string("pres_n"), pres_n);
+    H5::save(save_checkpoint_file_name, std::string("pres_n_minus_1"), pres_n_minus_1);
   }
 
 
@@ -889,18 +951,33 @@ namespace Step35
   {
     ConditionalOStream verbose_cout (std::cout, verbose);
 
-    const unsigned int n_steps =  static_cast<unsigned int>((T - t_0)/dt);
-    vel_exact.set_time (2.*dt);
+    const unsigned int n_steps = static_cast<unsigned int>((T - t_0)/dt);
+    vel_exact.set_time (t_0 + 2.*dt);
     vel_exact.set_geometry (height, width);
-    output_results(1);
-    for (unsigned int n = 2; n <= n_steps; ++n)
+    unsigned int step_start_n = 2;
+    unsigned int step_start_offset_n = 2;
+    if (load_checkpoint_file_name.size() == 0)
       {
+        output_results(1, t_0);
+      }
+    else
+      {
+        load_checkpoint();
+        step_start_n = static_cast<unsigned int>(t_0/dt);
+        step_start_offset_n = 0;
+      }
+
+    for (unsigned int n = step_start_n;
+         n <= step_start_n + n_steps - step_start_offset_n; ++n)
+      {
+        double current_time = (t_0 + (n - step_start_n + step_start_offset_n)*dt);
         if (n % output_interval == 0)
           {
             verbose_cout << "Plotting Solution" << std::endl;
-            output_results(n);
+            output_results(n, current_time);
           }
-        std::cout << "Step = " << n << " Time = " << (n*dt) << std::endl;
+        std::cout << "Step = " << n << " Time = "
+                  << current_time << std::endl;
         verbose_cout << "  Interpolating the velocity " << std::endl;
 
         interpolate_velocity();
@@ -908,14 +985,14 @@ namespace Step35
         if (n % vel_update_prec == 0)
           verbose_cout << "    With reinitialization of the preconditioner"
                        << std::endl;
-        diffusion_step ((n%vel_update_prec == 0) || (n == 2));
+        diffusion_step ((n % vel_update_prec == 0) || (n == step_start_n));
         verbose_cout << "  Projection Step" << std::endl;
-        projection_step ( (n == 2));
+        projection_step ((n == step_start_n));
         verbose_cout << "  Updating the Pressure" << std::endl;
-        update_pressure ( (n == 2));
+        update_pressure ((n == step_start_n));
         vel_exact.advance_time(dt);
       }
-    output_results (n_steps);
+    save_checkpoint();
   }
 
 
@@ -1177,14 +1254,14 @@ namespace Step35
 
 
   template <int dim>
-  void NavierStokesProjection<dim>::output_results (const unsigned int step)
+  void NavierStokesProjection<dim>::output_results (const unsigned int step, const double time)
   {
     int add_vorticity = (dim == 2) ? 1 : 0;
     std::vector<std::string> joint_solution_names (dim, "v");
     joint_solution_names.push_back ("p");
     if (add_vorticity)
       {
-        assemble_vorticity ( (step == 1) );
+        assemble_vorticity ();
         joint_solution_names.push_back ("rot_u");
       }
     // Unfortunately, the FESystem constructor depends on the dimensionality, so
@@ -1298,7 +1375,7 @@ namespace Step35
       }
     auto new_xdmf_entry = data_out.create_xdmf_entry
                           (data_filter, mesh_file_name, h5_solution_file_name,
-                           t_0 + step*dt, MPI_COMM_WORLD);
+                           time, MPI_COMM_WORLD);
     xdmf_entries.push_back(std::move(new_xdmf_entry));
     data_out.write_xdmf_file(xdmf_entries, xdmf_filename, MPI_COMM_WORLD);
 
@@ -1309,11 +1386,14 @@ namespace Step35
 
 
   template <int dim>
-  void NavierStokesProjection<dim>::assemble_vorticity (const bool reinit_prec)
+  void NavierStokesProjection<dim>::assemble_vorticity ()
   {
     Assert (dim == 2, ExcNotImplemented());
-    if (reinit_prec)
-      prec_vel_mass.initialize (vel_Mass);
+    if (!vorticity_preconditioner_assembled)
+      {
+        prec_vel_mass.initialize (vel_Mass);
+        vorticity_preconditioner_assembled = true;
+      }
 
     FEValues<dim> fe_val_vel (fe_velocity, quadrature_velocity,
                               update_gradients |

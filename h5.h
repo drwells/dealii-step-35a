@@ -23,12 +23,15 @@
 #include <deal.II/base/utilities.h>
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/block_vector.h>
+#include <deal.II/lac/full_matrix.h>
 
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
 #include "hdf5.h"
+
+#include <sys/stat.h>
 
 namespace H5
 {
@@ -58,9 +61,42 @@ namespace H5
       }
   }
 
+
   template<typename T>
-  void load_hdf5(std::string file_name, std::string dataset_name,
-                 dealii::BlockVector<T> &block_vector)
+  void save(const std::string file_name, const std::string dataset_name,
+            dealii::Vector<T> &vector)
+  {
+    struct stat buffer;
+    hid_t file_id;
+    hid_t dataspace_id;
+    hid_t dataset_id;
+    hsize_t n_dofs[1] {vector.size()};
+    if (stat(file_name.c_str(), &buffer) == 0)
+      {
+        // file exists
+        file_id = H5Fopen(file_name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
+      }
+    else
+      {
+        // file does not exist
+        file_id = H5Fcreate(file_name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
+                            H5P_DEFAULT);
+      }
+    dataspace_id = H5Screate_simple(1, n_dofs, nullptr);
+    dataset_id = H5Dcreate2
+    (file_id, dataset_name.c_str(), H5T_NATIVE_DOUBLE, dataspace_id,
+     H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+             &(vector[0]));
+    H5Dclose(dataset_id);
+    H5Sclose(dataspace_id);
+    H5Fclose(file_id);
+  }
+
+
+  template<typename T>
+  void load(const std::string file_name, const std::string dataset_name,
+            dealii::Vector<T> &vector)
   {
     hid_t file_id = H5Fopen(file_name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
     hid_t dataset = H5Dopen1(file_id, dataset_name.c_str());
@@ -68,22 +104,19 @@ namespace H5
     hid_t dataspace = H5Dget_space(dataset);
 
     int rank = H5Sget_simple_extent_ndims(dataspace);
-    std::vector<hsize_t> dims(rank);
-    std::vector<hsize_t> max_dims(rank);
-    H5Sget_simple_extent_dims(dataspace, dims.data(), max_dims.data());
-    unsigned int n_blocks = dims[rank - 1];
+    Assert(rank == 1, dealii::ExcInternalError());
 
     hsize_t bufsize = H5Dget_storage_size(dataset);
-    std::vector<double> data(bufsize/sizeof(T));
+    vector.reinit(bufsize/sizeof(T));
     H5Dread(dataset, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-            static_cast<void *>(data.data()));
-    as_block_vector(data, n_blocks, block_vector);
+            static_cast<void *>(&(vector[0])));
 
     H5Sclose(dataspace);
     H5Tclose(datatype);
     H5Dclose(dataset);
     H5Fclose(file_id);
   }
+
 
   template<typename T>
   void load_block_vector(std::string file_name,
@@ -144,6 +177,30 @@ namespace H5
         H5Dclose(dataset_id);
         H5Sclose(dataspace_id);
       }
+    H5Fclose(file_id);
+  }
+
+  // TODO it should be possible to parameterize this by type.
+  template<typename T>
+  void save_full_matrix(std::string file_name,
+                         dealii::FullMatrix<T> &matrix)
+  // Save a deal.II full matrix.
+  {
+    hid_t file_id = H5Fcreate(file_name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT,
+                              H5P_DEFAULT);
+    hsize_t dims[2];
+
+    dims[0] = matrix.m();
+    dims[1] = matrix.n();
+    hid_t dataspace_id = H5Screate_simple(2, dims, nullptr);
+    std::string dataset_name = "/a";
+    hid_t dataset_id = H5Dcreate2(file_id, dataset_name.c_str(),
+                                  H5T_NATIVE_DOUBLE, dataspace_id,
+                                  H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+             &matrix(0, 0));
+    H5Dclose(dataset_id);
+    H5Sclose(dataspace_id);
     H5Fclose(file_id);
   }
 }
