@@ -33,6 +33,7 @@
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/sparse_matrix.h>
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_gmres.h>
@@ -821,12 +822,13 @@ namespace Step35
   void
   NavierStokesProjection<dim>::initialize_velocity_matrices()
   {
-    CompressedSparsityPattern compressed_sparsity_pattern_velocity
-    (dof_handler_velocity.n_dofs(), dof_handler_velocity.n_dofs());
-    DoFTools::make_sparsity_pattern (dof_handler_velocity,
-                                     compressed_sparsity_pattern_velocity);
-    sparsity_pattern_velocity.copy_from (compressed_sparsity_pattern_velocity);
-    sparsity_pattern_velocity.compress();
+    {
+      DynamicSparsityPattern compressed_sparsity_pattern
+        (dof_handler_velocity.n_dofs(), dof_handler_velocity.n_dofs());
+      DoFTools::make_sparsity_pattern
+        (dof_handler_velocity, compressed_sparsity_pattern);
+      sparsity_pattern_velocity.copy_from (compressed_sparsity_pattern);
+    }
 
     vel_Laplace_plus_Mass.reinit (sparsity_pattern_velocity);
     for (unsigned int d = 0; d < dim; ++d)
@@ -847,13 +849,13 @@ namespace Step35
   void
   NavierStokesProjection<dim>::initialize_pressure_matrices()
   {
-    CompressedSparsityPattern compressed_sparsity_pattern_pressure
-    (dof_handler_pressure.n_dofs(), dof_handler_pressure.n_dofs());
-    DoFTools::make_sparsity_pattern
-    (dof_handler_pressure, compressed_sparsity_pattern_pressure);
-    sparsity_pattern_pressure.copy_from (compressed_sparsity_pattern_pressure);
-
-    sparsity_pattern_pressure.compress();
+    {
+      DynamicSparsityPattern compressed_sparsity_pattern
+        (dof_handler_pressure.n_dofs(), dof_handler_pressure.n_dofs());
+      DoFTools::make_sparsity_pattern
+        (dof_handler_pressure, compressed_sparsity_pattern);
+      sparsity_pattern_pressure.copy_from (compressed_sparsity_pattern);
+    }
 
     pres_Laplace.reinit (sparsity_pattern_pressure);
     pres_iterative.reinit (sparsity_pattern_pressure);
@@ -872,13 +874,14 @@ namespace Step35
   void
   NavierStokesProjection<dim>::initialize_gradient_operator()
   {
-    CompressedSparsityPattern compressed_sparsity_pattern_pres_vel
+    {
+    DynamicSparsityPattern compressed_sparsity_pattern
     (dof_handler_velocity.n_dofs(), dof_handler_pressure.n_dofs());
     DoFTools::make_sparsity_pattern (dof_handler_velocity,
                                      dof_handler_pressure,
-                                     compressed_sparsity_pattern_pres_vel);
-    sparsity_pattern_pres_vel.copy_from (compressed_sparsity_pattern_pres_vel);
-    sparsity_pattern_pres_vel.compress();
+                                     compressed_sparsity_pattern);
+    sparsity_pattern_pres_vel.copy_from (compressed_sparsity_pattern);
+    }
 
     InitGradPerTaskData per_task_data (0, fe_velocity.dofs_per_cell,
                                        fe_pressure.dofs_per_cell);
