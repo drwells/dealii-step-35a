@@ -426,6 +426,9 @@ namespace Step35
     DoFHandler<dim> dof_handler_velocity;
     DoFHandler<dim> dof_handler_pressure;
 
+    std::unique_ptr<FiniteElement<dim>> output_fe;
+    DoFHandler<dim> dof_handler_output;
+
     QGauss<dim> quadrature_pressure;
     QGauss<dim> quadrature_velocity;
 
@@ -642,6 +645,7 @@ namespace Step35
     fe_pressure (deg),
     dof_handler_velocity (triangulation),
     dof_handler_pressure (triangulation),
+    dof_handler_output (triangulation),
     quadrature_pressure (deg+1),
     quadrature_velocity (deg+2),
     u_n(dim),
@@ -694,6 +698,26 @@ namespace Step35
 
     dof_handler_velocity.distribute_dofs (fe_velocity);
     dof_handler_pressure.distribute_dofs (fe_pressure);
+    // Unfortunately, the FESystem constructor depends on the dimensionality, so
+    // (without a reinit function) we must use dynamic allocation.
+    if (dim == 2)
+      {
+        output_fe = std::unique_ptr<FiniteElement<dim>>
+          (new FESystem<dim> (fe_velocity, dim, fe_pressure, 1, fe_velocity, 1));
+      }
+    else
+      {
+        output_fe = std::unique_ptr<FiniteElement<dim>>
+          (new FESystem<dim> (fe_velocity, dim, fe_pressure, 1));
+      }
+    dof_handler_output.distribute_dofs (*output_fe);
+#ifdef DEBUG
+    const int add_vorticity = (dim == 2) ? 1 : 0;
+    Assert (dof_handler_output.n_dofs() ==
+            ((dim + add_vorticity)*dof_handler_velocity.n_dofs() +
+             dof_handler_pressure.n_dofs()),
+            ExcInternalError());
+#endif
 
     // determine the maximum z coordinate.
     typename Triangulation<dim>::cell_iterator ti = triangulation.begin();
@@ -1273,35 +1297,15 @@ namespace Step35
         assemble_vorticity ();
         joint_solution_names.push_back ("rot_u");
       }
-    // Unfortunately, the FESystem constructor depends on the dimensionality, so
-    // (without a reinit function) we must use dynamic allocation.
-    std::unique_ptr<FESystem<dim>> joint_fe_ptr;
-    if (dim == 2)
-      {
-        joint_fe_ptr = std::unique_ptr<FESystem<dim>>
-                       (new FESystem<dim> (fe_velocity, dim, fe_pressure, 1,
-                                           fe_velocity, 1));
-      }
-    else
-      {
-        joint_fe_ptr = std::unique_ptr<FESystem<dim>>
-                       (new FESystem<dim> (fe_velocity, dim, fe_pressure, 1));
-      }
-    auto &joint_fe = *joint_fe_ptr;
+    const auto &joint_fe = *output_fe;
 
-    DoFHandler<dim> joint_dof_handler (triangulation);
-    joint_dof_handler.distribute_dofs (joint_fe);
-    Assert (joint_dof_handler.n_dofs() ==
-            ((dim + add_vorticity)*dof_handler_velocity.n_dofs() +
-             dof_handler_pressure.n_dofs()),
-            ExcInternalError());
-    static Vector<double> joint_solution (joint_dof_handler.n_dofs());
+    static Vector<double> joint_solution (dof_handler_output.n_dofs());
     std::vector<types::global_dof_index> loc_joint_dof_indices (joint_fe.dofs_per_cell),
         loc_vel_dof_indices (fe_velocity.dofs_per_cell),
         loc_pres_dof_indices (fe_pressure.dofs_per_cell);
     typename DoFHandler<dim>::active_cell_iterator
-    joint_cell = joint_dof_handler.begin_active(),
-    joint_endc = joint_dof_handler.end(),
+    joint_cell = dof_handler_output.begin_active(),
+    joint_endc = dof_handler_output.end(),
     vel_cell   = dof_handler_velocity.begin_active(),
     pres_cell  = dof_handler_pressure.begin_active();
     for (; joint_cell != joint_endc; ++joint_cell, ++vel_cell, ++pres_cell)
@@ -1336,7 +1340,7 @@ namespace Step35
             }
       }
     DataOut<dim> data_out;
-    data_out.attach_dof_handler (joint_dof_handler);
+    data_out.attach_dof_handler (dof_handler_output);
     std::vector< DataComponentInterpretation::DataComponentInterpretation >
     component_interpretation (dim + 1 + add_vorticity,
                               DataComponentInterpretation::component_is_part_of_vector);
