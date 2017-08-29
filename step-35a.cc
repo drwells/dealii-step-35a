@@ -207,7 +207,7 @@ namespace Step35
       std::ifstream file (filename);
       AssertThrow (file, ExcFileNotOpen (filename));
 
-      prm.read_input (file);
+      prm.parse_input (file);
 
       if (prm.get ("Method_Form") == std::string ("rotational"))
         form = METHOD_ROTATIONAL;
@@ -416,7 +416,7 @@ namespace Step35
 
     EquationData::Velocity<dim>               vel_exact;
     std::map<types::global_dof_index, double> boundary_values;
-    std::vector<types::boundary_id>           boundary_indicators;
+    std::vector<types::boundary_id>           boundary_ids;
 
     Triangulation<dim> triangulation;
 
@@ -690,7 +690,7 @@ namespace Step35
     triangulation.refine_global (n_refines);
     std::cout << "Number of active cells: " << triangulation.n_active_cells()
               << std::endl;
-    boundary_indicators = triangulation.get_boundary_indicators();
+    boundary_ids = triangulation.get_boundary_ids();
 
     dof_handler_velocity.distribute_dofs (fe_velocity);
     dof_handler_pressure.distribute_dofs (fe_pressure);
@@ -916,11 +916,11 @@ namespace Step35
                                  InitGradScratchData &scratch,
                                  InitGradPerTaskData &data)
   {
-    scratch.fe_val_vel.reinit (std::get<0> (SI.iterators));
-    scratch.fe_val_pres.reinit (std::get<1> (SI.iterators));
+    scratch.fe_val_vel.reinit (std::get<0> (*SI));
+    scratch.fe_val_pres.reinit (std::get<1> (*SI));
 
-    std::get<0> (SI.iterators)->get_dof_indices (data.vel_local_dof_indices);
-    std::get<1> (SI.iterators)->get_dof_indices (data.pres_local_dof_indices);
+    std::get<0> (*SI)->get_dof_indices (data.vel_local_dof_indices);
+    std::get<1> (*SI)->get_dof_indices (data.pres_local_dof_indices);
 
     data.local_grad = 0.;
     for (unsigned int q = 0; q < scratch.nqp; ++q)
@@ -1004,7 +1004,10 @@ namespace Step35
   NavierStokesProjection<dim>::interpolate_velocity()
   {
     for (unsigned int d = 0; d < dim; ++d)
-      u_star.block(d).equ (2., u_n.block(d), -1, u_n_minus_1.block(d));
+      {
+        u_star.block(d).equ(2.0, u_n.block(d));
+        u_star.block(d).add(-1.0, u_n_minus_1.block(d));
+      }
   }
 
 
@@ -1023,14 +1026,16 @@ namespace Step35
   void
   NavierStokesProjection<dim>::diffusion_step (const bool reinit_prec)
   {
-    pres_tmp.equ (-1., pres_n, -4./3., phi_n, 1./3., phi_n_minus_1);
+    pres_tmp.equ(-1.0, pres_n);
+    pres_tmp.add(-4.0/3.0, phi_n, 1.0/3.0, phi_n_minus_1);
 
     assemble_advection_term();
 
     for (unsigned int d = 0; d < dim; ++d)
       {
         force.block(d) = 0.;
-        v_tmp.equ (2./dt,u_n.block(d),-.5/dt,u_n_minus_1.block(d));
+        v_tmp.equ(2.0/dt, u_n.block(d));
+        v_tmp.add(-0.5/dt, u_n_minus_1.block(d));
         vel_Mass.vmult_add (force.block(d), v_tmp);
 
         pres_Diff[d].vmult_add (force.block(d), pres_tmp);
@@ -1042,8 +1047,8 @@ namespace Step35
         vel_exact.set_component(d);
         boundary_values.clear();
         for (std::vector<types::boundary_id>::const_iterator
-             boundaries = boundary_indicators.begin();
-             boundaries != boundary_indicators.end();
+             boundaries = boundary_ids.begin();
+             boundaries != boundary_ids.end();
              ++boundaries)
           {
             switch (*boundaries)
@@ -1248,7 +1253,8 @@ namespace Step35
           prec_mass.initialize (pres_Mass);
         pres_n = pres_tmp;
         prec_mass.solve (pres_n);
-        pres_n.sadd(1./Re, 1., pres_n_minus_1, 1., phi_n);
+        pres_n.sadd(1.0/Re, 1.0, pres_n_minus_1);
+        pres_n.add(1.0, phi_n);
         break;
       default:
         Assert (false, ExcNotImplemented());
