@@ -1240,11 +1240,9 @@ namespace Step35
   NavierStokesProjection<dim>::
   copy_advection_local_to_global(const AdvectionPerTaskData &data)
   {
-    for (unsigned int i = 0; i < fe_velocity.dofs_per_cell; ++i)
-      for (unsigned int j = 0; j < fe_velocity.dofs_per_cell; ++j)
-        vel_Advection.add (data.local_dof_indices[i],
-                           data.local_dof_indices[j],
-                           data.local_advection(i,j));
+    AssertThrow(data.local_dof_indices.size() == fe_velocity.dofs_per_cell,
+                ExcMessage("dimension mismatch"));
+    vel_Advection.add(data.local_dof_indices, data.local_advection);
   }
 
 
