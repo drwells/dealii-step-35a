@@ -1376,7 +1376,10 @@ namespace Step35
                               joint_solution_names,
                               DataOut<dim>::type_dof_data,
                               component_interpretation);
-    data_out.build_patches (deg + 2);
+    if (dim == 2)
+      data_out.build_patches (deg + 2);
+    else
+      data_out.build_patches ();
 
     std::string h5_solution_file_name = "solution-"
                                         + Utilities::int_to_string(step, 9) + ".h5";
