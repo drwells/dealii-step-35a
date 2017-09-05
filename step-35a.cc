@@ -49,6 +49,7 @@
 #include <deal.II/grid/tria_iterator.h>
 #include <deal.II/grid/tria_boundary_lib.h>
 #include <deal.II/grid/grid_in.h>
+#include <deal.II/grid/grid_tools.h>
 
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_accessor.h>
@@ -702,7 +703,9 @@ namespace Step35
     boundary_ids = triangulation.get_boundary_ids();
 
     dof_handler_velocity.distribute_dofs (fe_velocity);
+    DoFRenumbering::boost::Cuthill_McKee (dof_handler_velocity);
     dof_handler_pressure.distribute_dofs (fe_pressure);
+    DoFRenumbering::boost::Cuthill_McKee (dof_handler_pressure);
     // Unfortunately, the FESystem constructor depends on the dimensionality, so
     // (without a reinit function) we must use dynamic allocation.
     if (dim == 2)
