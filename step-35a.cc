@@ -1133,23 +1133,26 @@ namespace Step35
         }
     }
 
-
     {
       TimerOutput::Scope timer_scope(timer_output, "diffusion_component_solve");
-
       Threads::TaskGroup<void> tasks;
-      for (unsigned int d=0; d<dim; ++d)
+      for (unsigned int d = 0; d < dim; ++d)
         {
-          if (reinit_prec)
-            prec_velocity[d].initialize (vel_it_matrix[d],
-                                         SparseILU<double>::
-                                         AdditionalData (vel_diag_strength,
-                                                         vel_off_diagonals));
-          tasks += Threads::new_task (&NavierStokesProjection<dim>::
-                                      diffusion_component_solve,
-                                      *this, d);
+          tasks += Threads::new_task
+            ([this, d, reinit_prec]()
+             {
+               if (reinit_prec)
+                 {
+                   this->prec_velocity[d].initialize (this->vel_it_matrix[d],
+                                                      SparseILU<double>::
+                                                      AdditionalData (this->vel_diag_strength,
+                                                                      this->vel_off_diagonals,
+                                                                      /*use_previous_sparsity=*/false));
+                 }
+
+               this->diffusion_component_solve(d);
+             });
         }
-      tasks.join_all();
     }
   }
 
