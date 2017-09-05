@@ -103,8 +103,10 @@ namespace H5
     hid_t datatype = H5Dget_type(dataset);
     hid_t dataspace = H5Dget_space(dataset);
 
+#ifdef DEBUG
     int rank = H5Sget_simple_extent_ndims(dataspace);
     Assert(rank == 1, dealii::ExcInternalError());
+#endif
 
     hsize_t bufsize = H5Dget_storage_size(dataset);
     vector.reinit(bufsize/sizeof(T));

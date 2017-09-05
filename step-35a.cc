@@ -29,6 +29,7 @@
 #include <deal.II/base/parallel.h>
 #include <deal.II/base/utilities.h>
 #include <deal.II/base/conditional_ostream.h>
+#include <deal.II/base/timer.h>
 
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/vector.h>
@@ -466,6 +467,8 @@ namespace Step35
     double height;
     double width;
 
+    TimerOutput timer_output;
+
     DeclException2 (ExcInvalidTimeStep,
                     double, double,
                     << " The time step " << arg1 << " is out of range."
@@ -652,6 +655,7 @@ namespace Step35
     u_n_minus_1(dim),
     u_star(dim),
     force(dim),
+    timer_output (std::cout, TimerOutput::OutputFrequency::summary, TimerOutput::cpu_and_wall_times),
     vel_max_its (data.vel_max_iterations),
     vel_Krylov_size (data.vel_Krylov_size),
     vel_off_diagonals (data.vel_off_diagonals),
@@ -680,6 +684,7 @@ namespace Step35
   NavierStokesProjection<dim>::
   create_triangulation_and_dofs (const unsigned int n_refines)
   {
+    TimerOutput::Scope timer_scope(timer_output, "create_triangulation_and_dofs");
     GridIn<dim> grid_in;
     grid_in.attach_triangulation (triangulation);
     {
@@ -801,6 +806,7 @@ namespace Step35
   void
   NavierStokesProjection<dim>::load_checkpoint()
   {
+    TimerOutput::Scope timer_scope(timer_output, "load_checkpoint");
     if (load_checkpoint_file_name.size() == 0)
       {
         return;
@@ -823,6 +829,7 @@ namespace Step35
   void
   NavierStokesProjection<dim>::save_checkpoint()
   {
+    TimerOutput::Scope timer_scope(timer_output, "save_checkpoint");
     if (save_checkpoint_file_name.size() == 0)
       {
         return;
@@ -1027,6 +1034,7 @@ namespace Step35
   void
   NavierStokesProjection<dim>::interpolate_velocity()
   {
+    TimerOutput::Scope timer_scope(timer_output, "interpolate_velocity");
     for (unsigned int d = 0; d < dim; ++d)
       {
         u_star.block(d).equ(2.0, u_n.block(d));
@@ -1055,83 +1063,88 @@ namespace Step35
 
     assemble_advection_term();
 
-    for (unsigned int d = 0; d < dim; ++d)
-      {
-        force.block(d) = 0.;
-        v_tmp.equ(2.0/dt, u_n.block(d));
-        v_tmp.add(-0.5/dt, u_n_minus_1.block(d));
-        vel_Mass.vmult_add (force.block(d), v_tmp);
+    {
+      TimerOutput::Scope timer_scope(timer_output, "setup_diffusion_rhs_and_boundary");
+      for (unsigned int d = 0; d < dim; ++d)
+        {
+          force.block(d) = 0.;
+          v_tmp.equ(2.0/dt, u_n.block(d));
+          v_tmp.add(-0.5/dt, u_n_minus_1.block(d));
+          vel_Mass.vmult_add (force.block(d), v_tmp);
 
-        pres_Diff[d].vmult_add (force.block(d), pres_tmp);
-        u_n_minus_1.block(d) = u_n.block(d);
+          pres_Diff[d].vmult_add (force.block(d), pres_tmp);
+          u_n_minus_1.block(d) = u_n.block(d);
 
-        vel_it_matrix[d].copy_from (vel_Laplace_plus_Mass);
-        vel_it_matrix[d].add (1., vel_Advection);
+          vel_it_matrix[d].copy_from (vel_Laplace_plus_Mass);
+          vel_it_matrix[d].add (1., vel_Advection);
 
-        vel_exact.set_component(d);
-        boundary_values.clear();
-        for (std::vector<types::boundary_id>::const_iterator
-             boundaries = boundary_ids.begin();
-             boundaries != boundary_ids.end();
-             ++boundaries)
-          {
-            switch (*boundaries)
-              {
-              case 1:
-                VectorTools::
-                interpolate_boundary_values (dof_handler_velocity,
-                                             *boundaries,
-                                             ZeroFunction<dim>(),
-                                             boundary_values);
-                break;
-              case 2:
-                VectorTools::
-                interpolate_boundary_values (dof_handler_velocity,
-                                             *boundaries,
-                                             vel_exact,
-                                             boundary_values);
-                break;
-              case 3:
-                if (d != 0)
+          vel_exact.set_component(d);
+          boundary_values.clear();
+          for (std::vector<types::boundary_id>::const_iterator
+                 boundaries = boundary_ids.begin();
+               boundaries != boundary_ids.end();
+               ++boundaries)
+            {
+              switch (*boundaries)
+                {
+                case 1:
                   VectorTools::
-                  interpolate_boundary_values (dof_handler_velocity,
-                                               *boundaries,
-                                               ZeroFunction<dim>(),
-                                               boundary_values);
-                break;
-              case 4:
-                VectorTools::
-                interpolate_boundary_values (dof_handler_velocity,
-                                             *boundaries,
-                                             ZeroFunction<dim>(),
-                                             boundary_values);
-                break;
-              default:
-                Assert (false, ExcNotImplemented());
-              }
-          }
-        MatrixTools::apply_boundary_values (boundary_values,
-                                            vel_it_matrix[d],
-                                            u_n.block(d),
-                                            force.block(d));
-      }
+                    interpolate_boundary_values (dof_handler_velocity,
+                                                 *boundaries,
+                                                 ZeroFunction<dim>(),
+                                                 boundary_values);
+                  break;
+                case 2:
+                  VectorTools::
+                    interpolate_boundary_values (dof_handler_velocity,
+                                                 *boundaries,
+                                                 vel_exact,
+                                                 boundary_values);
+                  break;
+                case 3:
+                  if (d != 0)
+                    VectorTools::
+                      interpolate_boundary_values (dof_handler_velocity,
+                                                   *boundaries,
+                                                   ZeroFunction<dim>(),
+                                                   boundary_values);
+                  break;
+                case 4:
+                  VectorTools::
+                    interpolate_boundary_values (dof_handler_velocity,
+                                                 *boundaries,
+                                                 ZeroFunction<dim>(),
+                                                 boundary_values);
+                  break;
+                default:
+                  Assert (false, ExcNotImplemented());
+                }
+            }
+          MatrixTools::apply_boundary_values (boundary_values,
+                                              vel_it_matrix[d],
+                                              u_n.block(d),
+                                              force.block(d));
+        }
+    }
 
 
-    Threads::TaskGroup<void> tasks;
-    for (unsigned int d = 0; d < dim; ++d)
-      {
-        if (reinit_prec)
-          {
+    {
+      TimerOutput::Scope timer_scope(timer_output, "diffusion_component_solve");
+
+      Threads::TaskGroup<void> tasks;
+      for (unsigned int d=0; d<dim; ++d)
+        {
+          if (reinit_prec)
             prec_velocity[d].initialize (vel_it_matrix[d],
                                          SparseILU<double>::
                                          AdditionalData (vel_diag_strength,
                                                          vel_off_diagonals));
-          }
-        tasks += Threads::new_task (&NavierStokesProjection<dim>::
-                                    diffusion_component_solve,
-                                    *this, d);
-      }
-    tasks.join_all();
+          tasks += Threads::new_task (&NavierStokesProjection<dim>::
+                                      diffusion_component_solve,
+                                      *this, d);
+        }
+      tasks.join_all();
+    }
   }
 
 
@@ -1155,6 +1168,7 @@ namespace Step35
   void
   NavierStokesProjection<dim>::assemble_advection_term()
   {
+    TimerOutput::Scope timer_scope(timer_output, "assemble_advection_term");
     vel_Advection = 0.;
     AdvectionPerTaskData data (fe_velocity.dofs_per_cell);
     AdvectionScratchData scratch (fe_velocity, quadrature_velocity,
@@ -1232,6 +1246,7 @@ namespace Step35
   void
   NavierStokesProjection<dim>::projection_step (const bool reinit_prec)
   {
+    TimerOutput::Scope timer_scope(timer_output, "projection_step");
     pres_iterative.copy_from (pres_Laplace);
 
     pres_tmp = 0.;
@@ -1266,6 +1281,7 @@ namespace Step35
   void
   NavierStokesProjection<dim>::update_pressure (const bool reinit_prec)
   {
+    TimerOutput::Scope timer_scope(timer_output, "update_pressure");
     pres_n_minus_1 = pres_n;
     switch (type)
       {
@@ -1289,6 +1305,7 @@ namespace Step35
   template <int dim>
   void NavierStokesProjection<dim>::output_results (const unsigned int step, const double time)
   {
+    TimerOutput::Scope timer_scope(timer_output, "output_results");
     int add_vorticity = (dim == 2) ? 1 : 0;
     std::vector<std::string> joint_solution_names (dim, "v");
     joint_solution_names.push_back ("p");
@@ -1401,6 +1418,7 @@ namespace Step35
   template <int dim>
   void NavierStokesProjection<dim>::assemble_vorticity ()
   {
+    TimerOutput::Scope timer_scope(timer_output, "assemble_vorticity");
     Assert (dim == 2, ExcNotImplemented());
     if (!vorticity_preconditioner_assembled)
       {
