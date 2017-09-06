@@ -1221,20 +1221,20 @@ namespace Step35
           }
       }
 
+    for (unsigned int q = 0; q < scratch.nqp; ++q)
+      scratch.u_star_tmp[q] *= 0.5;
+
     data.local_advection = 0.;
     for (unsigned int q = 0; q < scratch.nqp; ++q)
       for (unsigned int i = 0; i < scratch.dpc; ++i)
         for (unsigned int j = 0; j < scratch.dpc; ++j)
           data.local_advection(i,j) += (scratch.u_star_local[q] *
-                                        scratch.fe_val.shape_grad (j, q) *
-                                        scratch.fe_val.shape_value (i, q)
+                                        scratch.fe_val.shape_grad (j, q)
                                         +
-                                        0.5 *
                                         scratch.u_star_tmp[q] *
-                                        scratch.fe_val.shape_value (i, q) *
                                         scratch.fe_val.shape_value (j, q))
-                                       *
-                                       scratch.fe_val.JxW(q) ;
+            * scratch.fe_val.shape_value (i, q)
+            * scratch.fe_val.JxW(q);
   }
 
 
