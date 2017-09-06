@@ -588,7 +588,7 @@ namespace Step35
     {
       unsigned int                 nqp;
       unsigned int                 dpc;
-      std::vector< Point<dim> >    u_star_local;
+      std::vector< Tensor<1,dim> > u_star_local;
       std::vector< Tensor<1,dim> > grad_u_star;
       std::vector<double>          u_star_tmp;
       FEValues<dim>                fe_val;
@@ -1207,7 +1207,7 @@ namespace Step35
       {
         scratch.fe_val.get_function_values (u_star.block(d), scratch.u_star_tmp);
         for (unsigned int q = 0; q < scratch.nqp; ++q)
-          scratch.u_star_local[q](d) = scratch.u_star_tmp[q];
+          scratch.u_star_local[q][d] = scratch.u_star_tmp[q];
       }
 
     for (unsigned int d = 0; d < dim; ++d)
