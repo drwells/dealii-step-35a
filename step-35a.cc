@@ -731,24 +731,16 @@ namespace Step35
 #endif
 
     // determine the maximum z coordinate.
-    typename Triangulation<dim>::cell_iterator ti = triangulation.begin();
-    for (; ti != triangulation.end(); ++ti)
+    for (const auto ti : triangulation.active_cell_iterators())
       {
         for (unsigned int i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i)
           {
             if (dim == 3)
-              {
-                if (ti->vertex(i)[dim - 1] > height)
-                  {
-                    height = ti->vertex(i)[dim - 1];
-                  }
-              }
-            if (ti->vertex(i)[1] > width)
-              {
-                width = ti->vertex(i)[1];
-              }
+              height = std::max(ti->vertex(i)[dim - 1], height);
+            width = std::max(ti->vertex(i)[1], width);
           }
       }
+    vel_exact.set_geometry (height, width);
 
     std::cout << "width: " << width << std::endl;
     std::cout << "height: " << height << std::endl;
