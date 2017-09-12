@@ -1,7 +1,5 @@
 /* ---------------------------------------------------------------------
- * $Id: step-35a.cc $
- *
- * Copyright (C) 2009 - 2013 by the deal.II authors
+ * Copyright (C) 2009 - 2017 by the deal.II authors
  *
  * This file is NOT part of the deal.II library.
  *
@@ -16,6 +14,7 @@
  *
  * Author: Abner Salgado, Texas A&M University 2009
  * Author: David Wells, Virginia Tech, 2014
+ *         David Wells, Rensselaer Polytechnic Institute, 2017
  */
 
 
@@ -294,10 +293,11 @@ namespace Step35
       virtual double value (const Point<dim> &p,
                             const unsigned int component = 0) const;
 
-      virtual void value_list (const std::vector< Point<dim> > &points,
-                               std::vector<double> &values,
-                               const unsigned int component = 0) const;
-      virtual void set_geometry (const double height, const double width);
+      virtual void value_list (const std::vector<Point<dim> > &points,
+                               std::vector<double>            &values,
+                               const unsigned int              component = 0) const;
+      virtual void set_geometry (const double height,
+                                 const double width);
     private:
       double width;
       double height;
@@ -1401,7 +1401,7 @@ namespace Step35
       }
     DataOut<dim> data_out;
     data_out.attach_dof_handler (dof_handler_output);
-    std::vector< DataComponentInterpretation::DataComponentInterpretation >
+    std::vector<DataComponentInterpretation::DataComponentInterpretation>
     component_interpretation (dim + 1 + add_vorticity,
                               DataComponentInterpretation::component_is_part_of_vector);
     component_interpretation[dim]
@@ -1481,7 +1481,7 @@ namespace Step35
     std::vector<types::global_dof_index> ldi (dpc);
     Vector<double> loc_rot (dpc);
 
-    std::vector< Tensor<1,dim> > grad_u1 (nqp), grad_u2 (nqp);
+    std::vector<Tensor<1,dim> > grad_u1 (nqp), grad_u2 (nqp);
     rot_u = 0.;
 
     typename DoFHandler<dim>::active_cell_iterator
