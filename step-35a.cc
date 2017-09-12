@@ -580,10 +580,12 @@ namespace Step35
     struct AdvectionPerTaskData
     {
       FullMatrix<double>        local_advection;
+      Vector<double>            dummy_cell_vector;
       std::vector<types::global_dof_index> local_dof_indices;
       AdvectionPerTaskData (const unsigned int dpc)
         :
         local_advection (dpc, dpc),
+        dummy_cell_vector(dpc),
         local_dof_indices (dpc)
       {}
     };
@@ -1120,7 +1122,7 @@ namespace Step35
                u_n_minus_1.block(d) = u_n.block(d);
              }
              );
-          // and the matrices and old solution.
+          // and the matrices.
           tasks += Threads::new_task
             ([this, d]()
              {
@@ -1138,7 +1140,6 @@ namespace Step35
           tasks += Threads::new_task
             ([this, d, reinit_prec]()
              {
-               velocity_wall_constraints.condense(vel_it_matrix[d], force.block(d));
                velocity_flow_constraints[d].condense(vel_it_matrix[d], force.block(d));
                if (reinit_prec)
                  {
@@ -1260,9 +1261,27 @@ namespace Step35
   NavierStokesProjection<dim>::
   copy_advection_local_to_global(const AdvectionPerTaskData &data)
   {
-    AssertThrow(data.local_dof_indices.size() == fe_velocity.dofs_per_cell,
-                ExcMessage("dimension mismatch"));
-    vel_Advection.add(data.local_dof_indices, data.local_advection);
+    Assert(data.local_dof_indices.size() == fe_velocity.dofs_per_cell,
+           ExcMessage("dimension mismatch"));
+    for (unsigned int dim_n = 0; dim_n < dim; ++dim_n)
+      {
+        if (dim_n == 0)
+          {
+            velocity_wall_constraints.distribute_local_to_global
+              (data.local_advection,
+               data.dummy_cell_vector,
+               data.local_dof_indices,
+               vel_Advection,
+               force.block(0));
+          }
+        else
+          {
+            velocity_wall_constraints.distribute_local_to_global(data.dummy_cell_vector,
+                                                                 data.local_dof_indices,
+                                                                 force.block(dim_n),
+                                                                 data.local_advection);
+          }
+      }
   }
 
 
