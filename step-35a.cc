@@ -297,7 +297,7 @@ namespace Step35
       virtual void value_list (const std::vector< Point<dim> > &points,
                                std::vector<double> &values,
                                const unsigned int component = 0) const;
-      virtual void set_geometry (double height, double width);
+      virtual void set_geometry (const double height, const double width);
     private:
       double width;
       double height;
