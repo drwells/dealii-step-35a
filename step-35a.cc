@@ -456,7 +456,7 @@ namespace Step35
     BlockVector<double> u_n_minus_1;
     BlockVector<double> u_star;
     BlockVector<double> force;
-    Vector<double>      v_tmp;
+    BlockVector<double> v_tmp;
     Vector<double>      pres_tmp;
     Vector<double>      rot_u;
 
@@ -656,6 +656,7 @@ namespace Step35
     u_n_minus_1(dim),
     u_star(dim),
     force(dim),
+    v_tmp(dim),
     timer_output (std::cout, TimerOutput::OutputFrequency::summary, TimerOutput::cpu_and_wall_times),
     vel_max_its (data.vel_max_iterations),
     vel_Krylov_size (data.vel_Krylov_size),
@@ -760,8 +761,8 @@ namespace Step35
         u_n_minus_1.block(d).reinit (dof_handler_velocity.n_dofs());
         u_star.block(d).reinit (dof_handler_velocity.n_dofs());
         force.block(d).reinit (dof_handler_velocity.n_dofs());
+        v_tmp.block(d).reinit (dof_handler_velocity.n_dofs());
       }
-    v_tmp.reinit (dof_handler_velocity.n_dofs());
     rot_u.reinit (dof_handler_velocity.n_dofs());
 
     std::cout << "dim (X_h) = " << (dof_handler_velocity.n_dofs()*dim)
@@ -1062,20 +1063,32 @@ namespace Step35
     assemble_advection_term();
 
     {
-      TimerOutput::Scope timer_scope(timer_output, "setup_diffusion_rhs_and_boundary");
+      TimerOutput::Scope timer_scope(timer_output, "setup_diffusion_rhs");
+      Threads::TaskGroup<void> tasks;
       for (unsigned int d = 0; d < dim; ++d)
         {
-          force.block(d) = 0.;
-          v_tmp.equ(2.0/dt, u_n.block(d));
-          v_tmp.add(-0.5/dt, u_n_minus_1.block(d));
-          vel_Mass.vmult_add (force.block(d), v_tmp);
+          tasks += Threads::new_task
+            ([this, d]()
+             {
+               force.block(d) = 0.;
+               v_tmp.block(d).equ(2.0/dt, u_n.block(d));
+               v_tmp.block(d).add(-0.5/dt, u_n_minus_1.block(d));
+               vel_Mass.vmult_add (force.block(d), v_tmp.block(d));
 
-          pres_Diff[d].vmult_add (force.block(d), pres_tmp);
-          u_n_minus_1.block(d) = u_n.block(d);
+               pres_Diff[d].vmult_add (force.block(d), pres_tmp);
+               u_n_minus_1.block(d) = u_n.block(d);
 
-          vel_it_matrix[d].copy_from (vel_Laplace_plus_Mass);
-          vel_it_matrix[d].add (1., vel_Advection);
+               vel_it_matrix[d].copy_from (vel_Laplace_plus_Mass);
+               vel_it_matrix[d].add (1., vel_Advection);
+             }
+             );
+        }
+    }
 
+    {
+      TimerOutput::Scope timer_scope(timer_output, "setup_diffusion_boundary");
+      for (unsigned int d = 0; d < dim; ++d)
+        {
           vel_exact.set_component(d);
           boundary_values.clear();
           for (std::vector<types::boundary_id>::const_iterator
