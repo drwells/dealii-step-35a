@@ -689,18 +689,18 @@ namespace Step35
     GridIn<dim> grid_in;
     grid_in.attach_triangulation (triangulation);
     {
-      std::string filename = "cylinderextruded.msh";
+      std::string filename = "nsbench2.inp";
       std::ifstream file (filename.c_str());
       Assert (file, ExcFileNotOpen (filename.c_str()));
-      grid_in.read_msh (file);
-      // grid_in.read_ucd (file);
-      std::cout << "minimum cell diameter: "
-                << GridTools::minimal_cell_diameter (triangulation)
-                << '\n';
+      // grid_in.read_msh (file);
+      grid_in.read_ucd (file);
     }
     std::cout << "Number of refines = " << n_refines
-              << std::endl;
+              << '\n';
     triangulation.refine_global (n_refines);
+    std::cout << "minimum cell diameter: "
+              << GridTools::minimal_cell_diameter (triangulation)
+              << '\n';
     std::cout << "Number of active cells: " << triangulation.n_active_cells()
               << std::endl;
     boundary_ids = triangulation.get_boundary_ids();
