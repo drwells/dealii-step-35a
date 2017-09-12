@@ -438,10 +438,8 @@ namespace Step35
     SparsityPattern sparsity_pattern_pressure;
     SparsityPattern sparsity_pattern_pres_vel;
 
-    SparseMatrix<double> vel_Laplace_plus_Mass;
     SparseMatrix<double> vel_it_matrix[dim];
     SparseMatrix<double> vel_Mass;
-    SparseMatrix<double> vel_Laplace;
     SparseMatrix<double> vel_Advection;
     SparseMatrix<double> pres_Laplace;
     SparseMatrix<double> pres_Mass;
@@ -779,10 +777,6 @@ namespace Step35
   void
   NavierStokesProjection<dim>::initialize()
   {
-    vel_Laplace_plus_Mass = 0.;
-    vel_Laplace_plus_Mass.add (1./Re, vel_Laplace);
-    vel_Laplace_plus_Mass.add (1.5/dt, vel_Mass);
-
     EquationData::Pressure<dim> pres (t_0);
     VectorTools::interpolate (dof_handler_pressure, pres, pres_n_minus_1);
     pres.advance_time (dt);
@@ -860,19 +854,14 @@ namespace Step35
       sparsity_pattern_velocity.copy_from (compressed_sparsity_pattern);
     }
 
-    vel_Laplace_plus_Mass.reinit (sparsity_pattern_velocity);
     for (unsigned int d = 0; d < dim; ++d)
       vel_it_matrix[d].reinit (sparsity_pattern_velocity);
     vel_Mass.reinit (sparsity_pattern_velocity);
-    vel_Laplace.reinit (sparsity_pattern_velocity);
     vel_Advection.reinit (sparsity_pattern_velocity);
 
     MatrixCreator::create_mass_matrix (dof_handler_velocity,
                                        quadrature_velocity,
                                        vel_Mass);
-    MatrixCreator::create_laplace_matrix (dof_handler_velocity,
-                                          quadrature_velocity,
-                                          vel_Laplace);
   }
 
   template <int dim>
@@ -1078,8 +1067,7 @@ namespace Step35
                pres_Diff[d].vmult_add (force.block(d), pres_tmp);
                u_n_minus_1.block(d) = u_n.block(d);
 
-               vel_it_matrix[d].copy_from (vel_Laplace_plus_Mass);
-               vel_it_matrix[d].add (1., vel_Advection);
+               vel_it_matrix[d].copy_from (vel_Advection);
              }
              );
         }
@@ -1226,19 +1214,35 @@ namespace Step35
           }
       }
 
+    const double time_step_term = 1.5/dt;
+    const double inverse_re = 1.0/Re;
+
     for (unsigned int q = 0; q < scratch.nqp; ++q)
-      scratch.u_star_tmp[q] *= 0.5;
+      {
+        scratch.u_star_tmp[q] *= 0.5;
+        // mass contribution
+        scratch.u_star_tmp[q] += time_step_term;
+      }
 
     data.local_advection = 0.;
     for (unsigned int q = 0; q < scratch.nqp; ++q)
       for (unsigned int i = 0; i < scratch.dpc; ++i)
         for (unsigned int j = 0; j < scratch.dpc; ++j)
-          data.local_advection(i,j) += (scratch.u_star_local[q] *
-                                        scratch.fe_val.shape_grad (j, q)
-                                        +
-                                        scratch.u_star_tmp[q] *
-                                        scratch.fe_val.shape_value (j, q))
-            * scratch.fe_val.shape_value (i, q)
+          data.local_advection(i,j) +=
+            (
+             // diffusion
+             inverse_re *
+             (scratch.fe_val.shape_grad(i, q) * scratch.fe_val.shape_grad(j, q))
+             +
+             scratch.fe_val.shape_value (i, q)
+             * (// advection
+                scratch.u_star_local[q] *
+                scratch.fe_val.shape_grad (j, q)
+                +
+                // note that the mass contribution is here
+                scratch.u_star_tmp[q] *
+                scratch.fe_val.shape_value (j, q))
+             )
             * scratch.fe_val.JxW(q);
   }
 
