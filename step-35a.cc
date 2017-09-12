@@ -434,9 +434,13 @@ namespace Step35
     QGauss<dim> quadrature_pressure;
     QGauss<dim> quadrature_velocity;
 
-    SparsityPattern sparsity_pattern_velocity;
+    SparsityPattern constrained_velocity_sparsity_pattern;
+    SparsityPattern unconstrained_velocity_sparsity_pattern;
     SparsityPattern sparsity_pattern_pressure;
     SparsityPattern sparsity_pattern_pres_vel;
+
+    ConstraintMatrix                  velocity_wall_constraints;
+    std::array<ConstraintMatrix, dim> velocity_flow_constraints;
 
     SparseMatrix<double> vel_it_matrix[dim];
     SparseMatrix<double> vel_Mass;
@@ -501,6 +505,8 @@ namespace Step35
     bool vorticity_preconditioner_assembled;
     std::vector<XDMFEntry> xdmf_entries;
     bool                   write_mesh;
+
+    void initialize_constraints();
 
     void initialize_velocity_matrices();
 
@@ -744,6 +750,7 @@ namespace Step35
     std::cout << "width: " << width << std::endl;
     std::cout << "height: " << height << std::endl;
 
+    initialize_constraints();
     initialize_velocity_matrices();
     initialize_pressure_matrices();
     initialize_gradient_operator();
@@ -844,6 +851,50 @@ namespace Step35
 
   template <int dim>
   void
+  NavierStokesProjection<dim>::initialize_constraints()
+  {
+    // check the boundary ids
+    for (const types::boundary_id boundary_id : boundary_ids)
+      {
+        Assert(boundary_id == 1 || boundary_id == 2 ||
+               boundary_id == 3 || boundary_id == 4,
+               ExcMessage("unknown boundary id"));
+      }
+
+    for (unsigned int dim_n = 0; dim_n < dim; ++dim_n)
+    {
+      vel_exact.set_component(dim_n);
+      // different components have different inflow conditions
+      VectorTools::interpolate_boundary_values(dof_handler_velocity,
+                                               2,
+                                               vel_exact,
+                                               velocity_flow_constraints[dim_n]);
+
+      // we do not enforce zero outflow on the first velocity component
+      if (dim_n != 0)
+        VectorTools::interpolate_boundary_values(dof_handler_velocity,
+                                                 3,
+                                                 ZeroFunction<dim>(),
+                                                 velocity_flow_constraints[dim_n]);
+      velocity_flow_constraints[dim_n].close();
+    }
+
+    {
+      VectorTools::interpolate_boundary_values(dof_handler_velocity,
+                                               1,
+                                               ZeroFunction<dim>(),
+                                               velocity_wall_constraints);
+
+      VectorTools::interpolate_boundary_values(dof_handler_velocity,
+                                               4,
+                                               ZeroFunction<dim>(),
+                                               velocity_wall_constraints);
+      velocity_wall_constraints.close();
+    }
+  }
+
+  template <int dim>
+  void
   NavierStokesProjection<dim>::initialize_velocity_matrices()
   {
     {
@@ -851,13 +902,13 @@ namespace Step35
         (dof_handler_velocity.n_dofs(), dof_handler_velocity.n_dofs());
       DoFTools::make_sparsity_pattern
         (dof_handler_velocity, compressed_sparsity_pattern);
-      sparsity_pattern_velocity.copy_from (compressed_sparsity_pattern);
+      unconstrained_velocity_sparsity_pattern.copy_from (compressed_sparsity_pattern);
     }
 
     for (unsigned int d = 0; d < dim; ++d)
-      vel_it_matrix[d].reinit (sparsity_pattern_velocity);
-    vel_Mass.reinit (sparsity_pattern_velocity);
-    vel_Advection.reinit (sparsity_pattern_velocity);
+      vel_it_matrix[d].reinit (unconstrained_velocity_sparsity_pattern);
+    vel_Mass.reinit (unconstrained_velocity_sparsity_pattern);
+    vel_Advection.reinit (unconstrained_velocity_sparsity_pattern);
 
     MatrixCreator::create_mass_matrix (dof_handler_velocity,
                                        quadrature_velocity,
@@ -1077,52 +1128,6 @@ namespace Step35
       TimerOutput::Scope timer_scope(timer_output, "setup_diffusion_boundary");
       for (unsigned int d = 0; d < dim; ++d)
         {
-          vel_exact.set_component(d);
-          boundary_values.clear();
-          for (std::vector<types::boundary_id>::const_iterator
-                 boundaries = boundary_ids.begin();
-               boundaries != boundary_ids.end();
-               ++boundaries)
-            {
-              switch (*boundaries)
-                {
-                case 1:
-                  VectorTools::
-                    interpolate_boundary_values (dof_handler_velocity,
-                                                 *boundaries,
-                                                 ZeroFunction<dim>(),
-                                                 boundary_values);
-                  break;
-                case 2:
-                  VectorTools::
-                    interpolate_boundary_values (dof_handler_velocity,
-                                                 *boundaries,
-                                                 vel_exact,
-                                                 boundary_values);
-                  break;
-                case 3:
-                  if (d != 0)
-                    VectorTools::
-                      interpolate_boundary_values (dof_handler_velocity,
-                                                   *boundaries,
-                                                   ZeroFunction<dim>(),
-                                                   boundary_values);
-                  break;
-                case 4:
-                  VectorTools::
-                    interpolate_boundary_values (dof_handler_velocity,
-                                                 *boundaries,
-                                                 ZeroFunction<dim>(),
-                                                 boundary_values);
-                  break;
-                default:
-                  Assert (false, ExcNotImplemented());
-                }
-            }
-          MatrixTools::apply_boundary_values (boundary_values,
-                                              vel_it_matrix[d],
-                                              u_n.block(d),
-                                              force.block(d));
         }
     }
 
@@ -1134,6 +1139,8 @@ namespace Step35
           tasks += Threads::new_task
             ([this, d, reinit_prec]()
              {
+               velocity_wall_constraints.condense(vel_it_matrix[d], force.block(d));
+               velocity_flow_constraints[d].condense(vel_it_matrix[d], force.block(d));
                if (reinit_prec)
                  {
                    this->prec_velocity[d].initialize (this->vel_it_matrix[d],
@@ -1144,6 +1151,8 @@ namespace Step35
                  }
 
                this->diffusion_component_solve(d);
+               velocity_flow_constraints[d].distribute(u_n.block(d));
+               velocity_wall_constraints.distribute(u_n.block(d));
              });
         }
     }
