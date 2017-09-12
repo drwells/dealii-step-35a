@@ -1107,6 +1107,7 @@ namespace Step35
       Threads::TaskGroup<void> tasks;
       for (unsigned int d = 0; d < dim; ++d)
         {
+          // copy the vectors...
           tasks += Threads::new_task
             ([this, d]()
              {
@@ -1117,17 +1118,15 @@ namespace Step35
 
                pres_Diff[d].vmult_add (force.block(d), pres_tmp);
                u_n_minus_1.block(d) = u_n.block(d);
-
+             }
+             );
+          // and the matrices and old solution.
+          tasks += Threads::new_task
+            ([this, d]()
+             {
                vel_it_matrix[d].copy_from (vel_Advection);
              }
              );
-        }
-    }
-
-    {
-      TimerOutput::Scope timer_scope(timer_output, "setup_diffusion_boundary");
-      for (unsigned int d = 0; d < dim; ++d)
-        {
         }
     }
 
