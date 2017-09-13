@@ -1183,7 +1183,6 @@ namespace Step35
     }
 
     {
-      TimerOutput::Scope timer_scope(timer_output, "diffusion_component_solve");
       Threads::TaskGroup<void> tasks;
       for (unsigned int d = 0; d < dim; ++d)
         {
