@@ -435,6 +435,7 @@ namespace Step35
 
     ConstraintMatrix                  velocity_wall_constraints;
     std::array<ConstraintMatrix, dim> velocity_flow_constraints;
+    ConstraintMatrix                  projection_constraints;
 
     SparseMatrix<double> vel_it_matrix[dim];
     SparseMatrix<double> vel_Mass;
@@ -442,7 +443,6 @@ namespace Step35
     SparseMatrix<double> pres_Laplace;
     SparseMatrix<double> pres_Mass;
     SparseMatrix<double> pres_Diff[dim];
-    SparseMatrix<double> pres_iterative;
 
     Vector<double>      pres_n;
     Vector<double>      pres_n_minus_1;
@@ -457,7 +457,7 @@ namespace Step35
     Vector<double>      rot_u;
 
     SparseILU<double>   prec_velocity[dim];
-    PreconditionChebyshev<> prec_pres_Laplace;
+    SparseILU<double>   prec_pres_Laplace;
     SparseDirectUMFPACK prec_mass;
     SparseDirectUMFPACK prec_vel_mass;
 
@@ -484,7 +484,7 @@ namespace Step35
 
     void diffusion_step (const bool reinit_prec);
 
-    void projection_step (const bool reinit_prec);
+    void projection_step ();
 
     void update_pressure (const bool reinit_prec);
 
@@ -889,6 +889,17 @@ namespace Step35
                                                velocity_wall_constraints);
       velocity_wall_constraints.close();
     }
+
+    // constraints for the projection term
+    {
+      // TODO is this really the only projection boundary value (zero
+      // at outflow)?
+      VectorTools::interpolate_boundary_values(dof_handler_pressure,
+                                               3,
+                                               ZeroFunction<dim>(),
+                                               projection_constraints);
+      projection_constraints.close();
+    }
   }
 
   template <int dim>
@@ -928,20 +939,30 @@ namespace Step35
   NavierStokesProjection<dim>::initialize_pressure_matrices()
   {
     {
-      DynamicSparsityPattern compressed_sparsity_pattern
+      DynamicSparsityPattern dynamic_sparsity_pattern
         (dof_handler_pressure.n_dofs(), dof_handler_pressure.n_dofs());
-      DoFTools::make_sparsity_pattern
-        (dof_handler_pressure, compressed_sparsity_pattern);
-      sparsity_pattern_pressure.copy_from (compressed_sparsity_pattern);
+      DoFTools::make_sparsity_pattern(dof_handler_pressure,
+                                      dynamic_sparsity_pattern,
+                                      projection_constraints,
+                                      /*keep_constrained_dofs=*/false);
+      sparsity_pattern_pressure.copy_from (dynamic_sparsity_pattern);
     }
 
     pres_Laplace.reinit (sparsity_pattern_pressure);
-    pres_iterative.reinit (sparsity_pattern_pressure);
     pres_Mass.reinit (sparsity_pattern_pressure);
 
     MatrixCreator::create_laplace_matrix (dof_handler_pressure,
                                           quadrature_pressure,
-                                          pres_Laplace);
+                                          pres_Laplace,
+                                          static_cast<Function<dim> *>(nullptr),
+                                          projection_constraints);
+    // the pressure/projection matrix never changes, so set up its preconditioner here too
+    prec_pres_Laplace.initialize(pres_Laplace,
+                                 SparseILU<double>::
+                                 AdditionalData (this->vel_diag_strength,
+                                                 this->vel_off_diagonals,
+                                                 /*use_previous_sparsity=*/true));
+
     MatrixCreator::create_mass_matrix (dof_handler_pressure,
                                        quadrature_pressure,
                                        pres_Mass);
@@ -1068,7 +1089,7 @@ namespace Step35
                        << std::endl;
         diffusion_step ((n % vel_update_prec == 0) || (n == step_start_n));
         verbose_cout << "  Projection Step" << std::endl;
-        projection_step ((n == step_start_n));
+        projection_step ();
         verbose_cout << "  Updating the Pressure" << std::endl;
         update_pressure ((n == step_start_n));
         vel_exact.advance_time(dt);
@@ -1302,10 +1323,9 @@ namespace Step35
 
   template <int dim>
   void
-  NavierStokesProjection<dim>::projection_step (const bool reinit_prec)
+  NavierStokesProjection<dim>::projection_step ()
   {
     TimerOutput::Scope timer_scope(timer_output, "projection_step");
-    pres_iterative.copy_from (pres_Laplace);
 
     pres_tmp = 0.;
     for (unsigned d = 0; d < dim; ++d)
@@ -1313,23 +1333,11 @@ namespace Step35
 
     phi_n_minus_1 = phi_n;
 
-    static std::map<types::global_dof_index, double> bval;
-    if (reinit_prec)
-      VectorTools::interpolate_boundary_values (dof_handler_pressure, 3,
-                                                ZeroFunction<dim>(), bval);
-
-    MatrixTools::apply_boundary_values (bval, pres_iterative, phi_n, pres_tmp);
-
-    if (reinit_prec)
-      {
-        prec_pres_Laplace.initialize(pres_iterative,
-                                     PreconditionChebyshev<>::AdditionalData(2));
-      }
-
-
     SolverControl solvercontrol (vel_max_its, vel_eps*pres_tmp.l2_norm());
     SolverCG<> cg (solvercontrol);
-    cg.solve (pres_iterative, phi_n, pres_tmp, prec_pres_Laplace);
+    projection_constraints.condense(pres_tmp);
+    cg.solve (pres_Laplace, phi_n, pres_tmp, prec_pres_Laplace);
+    projection_constraints.distribute(phi_n);
 
     phi_n *= 1.5/dt;
   }
