@@ -856,12 +856,14 @@ namespace Step35
   NavierStokesProjection<dim>::initialize_constraints()
   {
     // check the boundary ids
+#ifdef DEBUG
     for (const types::boundary_id boundary_id : boundary_ids)
       {
         Assert(boundary_id == 1 || boundary_id == 2 ||
                boundary_id == 3 || boundary_id == 4,
                ExcMessage("unknown boundary id"));
       }
+#endif
 
     for (unsigned int dim_n = 0; dim_n < dim; ++dim_n)
     {
