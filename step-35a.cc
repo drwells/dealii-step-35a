@@ -1082,17 +1082,41 @@ namespace Step35
                   << current_time << std::endl;
         verbose_cout << "  Interpolating the velocity " << std::endl;
 
-        interpolate_velocity();
+        // both of these are needed to do the diffusion step
+        if (n == step_start_offset_n)
+          {
+            interpolate_velocity();
+            assemble_advection_term();
+          }
         verbose_cout << "  Diffusion Step" << std::endl;
         if (n % vel_update_prec == 0)
           verbose_cout << "    With reinitialization of the preconditioner"
                        << std::endl;
         diffusion_step ((n % vel_update_prec == 0) || (n == step_start_n));
+
+        interpolate_velocity();
         verbose_cout << "  Projection Step" << std::endl;
-        projection_step ();
+        // we may update the pressure while we assemble the advection matrix
+        // (both are expensive)
+        {
+          Threads::TaskGroup<void> tasks;
+          tasks += Threads::new_task
+            ([this]()
+             {
+               assemble_advection_term();
+             });
+
+          tasks += Threads::new_task
+            ([this]()
+             {
+               projection_step();
+               update_pressure (n == step_start_n);
+             });
+        }
+
         verbose_cout << "  Updating the Pressure" << std::endl;
-        update_pressure ((n == step_start_n));
         vel_exact.advance_time(dt);
+
       }
     save_checkpoint();
   }
@@ -1128,8 +1152,6 @@ namespace Step35
   {
     pres_tmp.equ(-1.0, pres_n);
     pres_tmp.add(-4.0/3.0, phi_n, 1.0/3.0, phi_n_minus_1);
-
-    assemble_advection_term();
 
     {
       TimerOutput::Scope timer_scope(timer_output, "setup_diffusion_rhs");
