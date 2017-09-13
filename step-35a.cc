@@ -902,18 +902,28 @@ namespace Step35
   NavierStokesProjection<dim>::initialize_velocity_matrices()
   {
     {
-      DynamicSparsityPattern compressed_sparsity_pattern
+      DynamicSparsityPattern dynamic_sparsity_pattern
         (dof_handler_velocity.n_dofs(), dof_handler_velocity.n_dofs());
-      DoFTools::make_sparsity_pattern
-        (dof_handler_velocity, compressed_sparsity_pattern);
-      unconstrained_velocity_sparsity_pattern.copy_from (compressed_sparsity_pattern);
+      DoFTools::make_sparsity_pattern(dof_handler_velocity,
+                                      dynamic_sparsity_pattern);
+      unconstrained_velocity_sparsity_pattern.copy_from (dynamic_sparsity_pattern);
+    }
+
+    {
+      DynamicSparsityPattern dynamic_sparsity_pattern
+        (dof_handler_velocity.n_dofs(), dof_handler_velocity.n_dofs());
+      DoFTools::make_sparsity_pattern(dof_handler_velocity,
+                                      dynamic_sparsity_pattern,
+                                      velocity_wall_constraints,
+                                      /*keep_constrained_dofs=*/false);
+      constrained_velocity_sparsity_pattern.copy_from (dynamic_sparsity_pattern);
     }
 
     for (unsigned int d = 0; d < dim; ++d)
-      vel_it_matrix[d].reinit (unconstrained_velocity_sparsity_pattern);
-    vel_Mass.reinit (unconstrained_velocity_sparsity_pattern);
-    vel_Advection.reinit (unconstrained_velocity_sparsity_pattern);
+      vel_it_matrix[d].reinit (constrained_velocity_sparsity_pattern);
+    vel_Advection.reinit (constrained_velocity_sparsity_pattern);
 
+    vel_Mass.reinit (unconstrained_velocity_sparsity_pattern);
     MatrixCreator::create_mass_matrix (dof_handler_velocity,
                                        quadrature_velocity,
                                        vel_Mass);
