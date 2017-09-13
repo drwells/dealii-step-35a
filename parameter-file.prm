@@ -6,8 +6,8 @@ subsection Physical data
   # In this subsection we declare the physical data
   # The initial and final time, and the Reynolds number
   set initial_time = 0.
-  set final_time   = 50
-  set Reynolds     = 200
+  set final_time   = 2
+  set Reynolds     = 100
   # set load_checkpoint_file_name = checkpoint_save.h5
   # set save_checkpoint_file_name = checkpoint_save_final.h5
   set save_checkpoint_file_name = checkpoint_save.h5
@@ -16,7 +16,7 @@ end
 subsection Time step data
   # In this subsection we declare the data that is to be used for time discretization,
   # i.e. the time step dt
-  set dt = 2e-3
+  set dt = 2e-2
 end
 
 subsection Space discretization
@@ -39,7 +39,7 @@ subsection Data solve velocity
 end
 
 #The output frequency
-set output_interval = 50
+set output_interval = 999
 
 #Finally we set the verbosity level
 set verbose = false
