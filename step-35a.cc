@@ -1167,7 +1167,7 @@ namespace Step35
              });
 
           tasks += Threads::new_task
-            ([this]()
+            ([this, n, step_start_n]()
              {
                projection_step();
                update_pressure (n == step_start_n);
