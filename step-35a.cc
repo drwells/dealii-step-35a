@@ -1183,34 +1183,26 @@ namespace Step35
     }
 
     {
+      TimerOutput::Scope timer_scope(timer_output, "solve_diffusion_component");
       Threads::TaskGroup<void> tasks;
       for (unsigned int d = 0; d < dim; ++d)
         {
           tasks += Threads::new_task
             ([this, d, reinit_prec]()
              {
-               {
-                 TimerOutput::Scope timer_scope(timer_output, "diffusion_component_constraints");
-                 velocity_flow_constraints[d].condense(vel_it_matrix[d], force.block(d));
-               }
-               {
-                 TimerOutput::Scope timer_scope(timer_output, "diffusion_component_solve");
-                 if (reinit_prec)
-                   {
-                     this->prec_velocity[d].initialize (this->vel_it_matrix[d],
-                                                        SparseILU<double>::
-                                                        AdditionalData (this->vel_diag_strength,
-                                                                        this->vel_off_diagonals,
-                                                                        /*use_previous_sparsity=*/false));
-                   }
-                 this->diffusion_component_solve(d);
-               }
+               velocity_flow_constraints[d].condense(vel_it_matrix[d], force.block(d));
+               if (reinit_prec)
+                 {
+                   this->prec_velocity[d].initialize (this->vel_it_matrix[d],
+                                                      SparseILU<double>::
+                                                      AdditionalData (this->vel_diag_strength,
+                                                                      this->vel_off_diagonals,
+                                                                      /*use_previous_sparsity=*/true));
+                 }
+               this->diffusion_component_solve(d);
 
-               {
-                 TimerOutput::Scope timer_scope(timer_output, "diffusion_component_constraints");
-                 velocity_flow_constraints[d].distribute(u_n.block(d));
-                 velocity_wall_constraints.distribute(u_n.block(d));
-               }
+               velocity_flow_constraints[d].distribute(u_n.block(d));
+               velocity_wall_constraints.distribute(u_n.block(d));
              });
         }
     }
