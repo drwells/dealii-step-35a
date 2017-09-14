@@ -441,7 +441,6 @@ namespace Step35
     SparseMatrix<double> vel_it_matrix[dim];
     SparseMatrix<double> vel_Mass;
     SparseMatrix<double> vel_Advection;
-    SparseMatrix<double> pres_Laplace;
     SparseMatrix<double> pres_Mass;
     SparseMatrix<double> pres_Diff[dim];
 
@@ -458,7 +457,6 @@ namespace Step35
     Vector<double>      rot_u;
 
     SparseILU<double>   prec_velocity[dim];
-    SparseILU<double>   prec_pres_Laplace;
     SparseDirectUMFPACK prec_mass;
     SparseDirectUMFPACK prec_vel_mass;
 
@@ -466,6 +464,15 @@ namespace Step35
     double width;
 
     TimerOutput timer_output;
+
+#ifdef STEP_35A_USE_PETSC
+    PETScWrappers::MPI::SparseMatrix pres_Laplace;
+    std::unique_ptr<PETScWrappers::PreconditionBoomerAMG> prec_pres;
+#else
+    SparseMatrix<double> pres_Laplace;
+    SparseILU<double> prec_pres;
+#endif
+
 
     DeclException2 (ExcInvalidTimeStep,
                     double, double,
@@ -949,20 +956,55 @@ namespace Step35
       sparsity_pattern_pressure.copy_from (dynamic_sparsity_pattern);
     }
 
-    pres_Laplace.reinit (sparsity_pattern_pressure);
     pres_Mass.reinit (sparsity_pattern_pressure);
 
-    MatrixCreator::create_laplace_matrix (dof_handler_pressure,
-                                          quadrature_pressure,
-                                          pres_Laplace,
-                                          static_cast<Function<dim> *>(nullptr),
-                                          projection_constraints);
     // the pressure/projection matrix never changes, so set up its preconditioner here too
-    prec_pres_Laplace.initialize(pres_Laplace,
-                                 SparseILU<double>::
-                                 AdditionalData (this->vel_diag_strength,
-                                                 this->vel_off_diagonals,
-                                                 /*use_previous_sparsity=*/true));
+    const IndexSet pressure_dofs = complete_index_set(dof_handler_pressure.n_dofs());
+#ifdef STEP_35A_USE_PETSC
+    pres_Laplace.reinit(pressure_dofs, pressure_dofs, projection_sparsity_pattern,
+                        MPI_COMM_WORLD);
+#else
+    pres_Laplace.reinit (projection_sparsity_pattern);
+#endif
+    {
+      FEValues<dim> fe_values(fe_pressure,
+                              quadrature_pressure,
+                              update_gradients | update_JxW_values);
+      FullMatrix<double> cell_matrix(fe_pressure.dofs_per_cell,
+                                     fe_pressure.dofs_per_cell);
+      std::vector<types::global_dof_index> cell_dofs(fe_pressure.dofs_per_cell);
+      for (const auto cell : dof_handler_pressure.active_cell_iterators())
+        {
+          fe_values.reinit(cell);
+          cell->get_dof_indices(cell_dofs);
+          cell_matrix = 0.0;
+          for (unsigned int q = 0; q < fe_values.n_quadrature_points; ++q)
+            {
+              for (unsigned int i = 0; i < fe_pressure.dofs_per_cell; ++i)
+                for (unsigned int j = 0; j < fe_pressure.dofs_per_cell; ++j)
+                  cell_matrix(i, j) += (fe_values.shape_grad(i, q)
+                                        * fe_values.shape_grad(j, q))
+                    * fe_values.JxW(q);
+            }
+          projection_constraints.distribute_local_to_global(cell_matrix,
+                                                            cell_dofs,
+                                                            pres_Laplace);
+        }
+#ifdef STEP_35A_USE_PETSC
+      pres_Laplace.compress(VectorOperation::add);
+      PETScWrappers::PreconditionBoomerAMG::AdditionalData options;
+      options.symmetric_operator = true;
+
+      prec_pres.reset(new PETScWrappers::PreconditionBoomerAMG(pres_Laplace,
+                                                               options));
+#else
+      prec_pres.initialize(pres_Laplace,
+                           SparseILU<double>::
+                           AdditionalData(vel_diag_strength,
+                                          vel_off_diagonals,
+                                          /*use_previous_sparsity=*/true));
+#endif
+    }
 
     MatrixCreator::create_mass_matrix (dof_handler_pressure,
                                        quadrature_pressure,
@@ -1339,21 +1381,63 @@ namespace Step35
   void
   NavierStokesProjection<dim>::projection_step ()
   {
-    TimerOutput::Scope timer_scope(timer_output, "projection_step");
+    {
+      TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_1");
+      pres_tmp = 0.;
+      for (unsigned d = 0; d < dim; ++d)
+        pres_Diff[d].Tvmult_add (pres_tmp, u_n.block(d));
 
-    pres_tmp = 0.;
-    for (unsigned d = 0; d < dim; ++d)
-      pres_Diff[d].Tvmult_add (pres_tmp, u_n.block(d));
+      phi_n_minus_1 = phi_n;
+    }
 
-    phi_n_minus_1 = phi_n;
+#ifdef STEP_35A_USE_PETSC
+    {
+      const IndexSet pressure_dofs = complete_index_set(dof_handler_pressure.n_dofs());
+      PETScWrappers::MPI::Vector petsc_solution(pressure_dofs, MPI_COMM_WORLD);
+      PETScWrappers::MPI::Vector petsc_rhs(pressure_dofs, MPI_COMM_WORLD);
+      PetscScalar *solution_ptr;
 
-    SolverControl solvercontrol (vel_max_its, vel_eps*pres_tmp.l2_norm());
-    SolverCG<> cg (solvercontrol);
-    projection_constraints.condense(pres_tmp);
-    cg.solve (pres_Laplace, phi_n, pres_tmp, prec_pres_Laplace);
-    projection_constraints.distribute(phi_n);
+      {
+        TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_2");
+        int ierr = VecGetArray(petsc_rhs, &solution_ptr);
+        AssertThrow(ierr == 0, ExcPETScError(ierr));
+        std::copy(pres_tmp.begin(), pres_tmp.end(), solution_ptr);
+        ierr = VecRestoreArray(petsc_rhs, &solution_ptr);
+        AssertThrow(ierr == 0, ExcPETScError(ierr));
+      }
 
-    phi_n *= 1.5/dt;
+      {
+        TimerOutput::Scope timer_scope(timer_output, "projection_step_solve");
+        SolverControl solver_control (vel_max_its, vel_eps*pres_tmp.l2_norm());
+        PETScWrappers::SolverCG solver(solver_control, MPI_COMM_WORLD);
+        solver.solve(pres_Laplace, petsc_solution, petsc_rhs, *prec_pres);
+      }
+
+      {
+        TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_3");
+        int ierr = VecGetArray(petsc_solution, &solution_ptr);
+        AssertThrow(ierr == 0, ExcPETScError(ierr));
+        std::copy(solution_ptr, solution_ptr + petsc_solution.size(), phi_n.begin());
+        ierr = VecRestoreArray(petsc_solution, &solution_ptr);
+        AssertThrow(ierr == 0, ExcPETScError(ierr));
+        projection_constraints.distribute(phi_n);
+      }
+    }
+#else
+    {
+      TimerOutput::Scope timer_scope(timer_output, "projection_step_solve");
+      SolverControl solver_control (vel_max_its, vel_eps*pres_tmp.l2_norm());
+      SolverCG<> cg (solver_control);
+      projection_constraints.condense(pres_tmp);
+      cg.solve (pres_Laplace, phi_n, pres_tmp, prec_pres);
+      projection_constraints.distribute(phi_n);
+    }
+#endif
+
+    {
+      TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_4");
+      phi_n *= 1.5/dt;
+    }
   }
 
 
