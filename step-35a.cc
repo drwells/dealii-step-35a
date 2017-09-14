@@ -1189,7 +1189,31 @@ namespace Step35
         vel_exact.advance_time(dt);
 
       }
-    save_checkpoint();
+
+    {
+      // save_checkpoint();
+      // check a few things
+      if (false)
+        {
+          const BlockVector<double> new_u_n = u_n;
+          const BlockVector<double> new_u_n_minus_1 = u_n_minus_1;
+          const Vector<double> new_pres_n = pres_n;
+          load_checkpoint_file_name = "abner.h5";
+          load_checkpoint();
+          u_n -= new_u_n;
+          u_n_minus_1 -= new_u_n_minus_1;
+          pres_n -= new_pres_n;
+          std::cout << "pressure difference: "
+                    << pres_n.l2_norm()
+                    << '\n'
+                    << "u_n difference: "
+                    << u_n.l2_norm()
+                    << '\n'
+                    << "u_n_minus_1 difference: "
+                    << u_n_minus_1.l2_norm()
+                    << '\n';
+        }
+    }
   }
 
 
@@ -1569,16 +1593,21 @@ namespace Step35
     else
       data_out.build_patches ();
 
-    std::string h5_solution_file_name = "solution-"
-                                        + Utilities::int_to_string(step, 9) + ".h5";
+    std::string vtu_solution_file_name = "solution-"
+      + Utilities::int_to_string(step, 9) + ".vtu";
+    // std::string h5_solution_file_name = "solution-"
+    //   + Utilities::int_to_string(step, 9) + ".h5";
     std::string mesh_file_name = "mesh.h5";
     std::string xdmf_filename = "solution.xdmf";
 
-    DataOutBase::DataOutFilter data_filter
-    (DataOutBase::DataOutFilterFlags(true, true));
-    data_out.write_filtered_data(data_filter);
-    data_out.write_hdf5_parallel(data_filter, write_mesh, mesh_file_name,
-                                 h5_solution_file_name, MPI_COMM_WORLD);
+    // DataOutBase::DataOutFilter data_filter
+    // (DataOutBase::DataOutFilterFlags(true, true));
+    // data_out.write_filtered_data(data_filter);
+    (void)time;
+    // data_out.write_hdf5_parallel(data_filter, write_mesh, mesh_file_name,
+    //                              h5_solution_file_name, MPI_COMM_WORLD);
+    std::ofstream output_stream(vtu_solution_file_name);
+    data_out.write_vtu(output_stream);
     // only save the triangulation, FE, and DoFHandler once
     if (write_mesh)
       {
@@ -1598,11 +1627,11 @@ namespace Step35
             (i == 0) ? archive << dof_handler_velocity : archive << triangulation;
           }
       }
-    auto new_xdmf_entry = data_out.create_xdmf_entry
-                          (data_filter, mesh_file_name, h5_solution_file_name,
-                           time, MPI_COMM_WORLD);
-    xdmf_entries.push_back(std::move(new_xdmf_entry));
-    data_out.write_xdmf_file(xdmf_entries, xdmf_filename, MPI_COMM_WORLD);
+    // auto new_xdmf_entry = data_out.create_xdmf_entry
+    //                       (data_filter, mesh_file_name, h5_solution_file_name,
+    //                        time, MPI_COMM_WORLD);
+    // xdmf_entries.push_back(std::move(new_xdmf_entry));
+    // data_out.write_xdmf_file(xdmf_entries, xdmf_filename, MPI_COMM_WORLD);
 
     std::string snapshot_name = "snapshot-" + Utilities::int_to_string(step, 9)
                                 + ".h5";
