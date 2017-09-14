@@ -70,6 +70,14 @@
 #include <memory>
 #include <string>
 
+// #define STEP_35A_USE_PETSC
+
+#ifdef STEP_35A_USE_PETSC
+#include <deal.II/lac/petsc_parallel_sparse_matrix.h>
+#include <deal.II/lac/petsc_parallel_vector.h>
+#include <deal.II/lac/petsc_precondition.h>
+#include <deal.II/lac/petsc_solver.h>
+#endif
 
 #include "h5.h"
 
@@ -431,7 +439,8 @@ namespace Step35
 
     SparsityPattern constrained_velocity_sparsity_pattern;
     SparsityPattern unconstrained_velocity_sparsity_pattern;
-    SparsityPattern sparsity_pattern_pressure;
+    SparsityPattern projection_sparsity_pattern;
+    SparsityPattern pressure_sparsity_pattern;
     SparsityPattern sparsity_pattern_pres_vel;
 
     ConstraintMatrix                  velocity_wall_constraints;
@@ -953,10 +962,18 @@ namespace Step35
                                       dynamic_sparsity_pattern,
                                       projection_constraints,
                                       /*keep_constrained_dofs=*/false);
-      sparsity_pattern_pressure.copy_from (dynamic_sparsity_pattern);
+      projection_sparsity_pattern.copy_from (dynamic_sparsity_pattern);
     }
 
-    pres_Mass.reinit (sparsity_pattern_pressure);
+    {
+      DynamicSparsityPattern dynamic_sparsity_pattern
+        (dof_handler_pressure.n_dofs(), dof_handler_pressure.n_dofs());
+      DoFTools::make_sparsity_pattern(dof_handler_pressure,
+                                      dynamic_sparsity_pattern);
+      pressure_sparsity_pattern.copy_from (dynamic_sparsity_pattern);
+    }
+
+    pres_Mass.reinit (pressure_sparsity_pattern);
 
     // the pressure/projection matrix never changes, so set up its preconditioner here too
     const IndexSet pressure_dofs = complete_index_set(dof_handler_pressure.n_dofs());
