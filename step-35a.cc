@@ -1457,9 +1457,9 @@ namespace Step35
   NavierStokesProjection<dim>::projection_step ()
   {
     {
-      TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_1");
-      pres_tmp = 0.;
-      for (unsigned d = 0; d < dim; ++d)
+      TimerOutput::Scope timer_scope(timer_output, "projection_step_setup");
+      pres_Diff[0].Tvmult (pres_tmp, u_n.block(0));
+      for (unsigned d = 1; d < dim; ++d)
         pres_Diff[d].Tvmult_add (pres_tmp, u_n.block(d));
 
       phi_n_minus_1 = phi_n;
@@ -1472,7 +1472,7 @@ namespace Step35
       PETScWrappers::MPI::Vector petsc_rhs(pressure_dofs, MPI_COMM_WORLD);
 
       {
-        TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_2");
+        TimerOutput::Scope timer_scope(timer_output, "projection_step_setup");
         copy_to_petsc(pres_tmp, petsc_rhs);
       }
 
@@ -1484,7 +1484,7 @@ namespace Step35
       }
 
       {
-        TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_3");
+        TimerOutput::Scope timer_scope(timer_output, "projection_step_setup");
         copy_from_petsc(phi_n, petsc_solution);
         projection_constraints.distribute(phi_n);
       }
@@ -1501,7 +1501,7 @@ namespace Step35
 #endif
 
     {
-      TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_4");
+      TimerOutput::Scope timer_scope(timer_output, "projection_step_setup");
       phi_n *= 1.5/dt;
     }
   }
