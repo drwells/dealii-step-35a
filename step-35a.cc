@@ -442,6 +442,7 @@ namespace Step35
     SparsityPattern projection_sparsity_pattern;
     SparsityPattern pressure_sparsity_pattern;
     SparsityPattern sparsity_pattern_pres_vel;
+    SparsityPattern sparsity_pattern_vel_pres;
 
     ConstraintMatrix                  velocity_wall_constraints;
     std::array<ConstraintMatrix, dim> velocity_flow_constraints;
@@ -1034,12 +1035,21 @@ namespace Step35
   NavierStokesProjection<dim>::initialize_gradient_operator()
   {
     {
-    DynamicSparsityPattern compressed_sparsity_pattern
-    (dof_handler_velocity.n_dofs(), dof_handler_pressure.n_dofs());
-    DoFTools::make_sparsity_pattern (dof_handler_velocity,
-                                     dof_handler_pressure,
-                                     compressed_sparsity_pattern);
-    sparsity_pattern_pres_vel.copy_from (compressed_sparsity_pattern);
+      DynamicSparsityPattern dynamic_sparsity_pattern
+        (dof_handler_velocity.n_dofs(), dof_handler_pressure.n_dofs());
+      DoFTools::make_sparsity_pattern (dof_handler_velocity,
+                                       dof_handler_pressure,
+                                       dynamic_sparsity_pattern);
+      sparsity_pattern_pres_vel.copy_from (dynamic_sparsity_pattern);
+    }
+
+    {
+      DynamicSparsityPattern dynamic_sparsity_pattern
+        (dof_handler_pressure.n_dofs(), dof_handler_velocity.n_dofs());
+      DoFTools::make_sparsity_pattern (dof_handler_pressure,
+                                       dof_handler_velocity,
+                                       dynamic_sparsity_pattern);
+      sparsity_pattern_vel_pres.copy_from (dynamic_sparsity_pattern);
     }
 
     InitGradPerTaskData per_task_data (0, fe_velocity.dofs_per_cell,
@@ -1155,9 +1165,9 @@ namespace Step35
         diffusion_step ((n % vel_update_prec == 0) || (n == step_start_n));
 
         interpolate_velocity();
-        verbose_cout << "  Projection Step" << std::endl;
         // we may update the pressure while we assemble the advection matrix
         // (both are expensive)
+        // assemble_advection_term();
         {
           Threads::TaskGroup<void> tasks;
           tasks += Threads::new_task
@@ -1167,14 +1177,15 @@ namespace Step35
              });
 
           tasks += Threads::new_task
-            ([this, n, step_start_n]()
+            ([this, n, step_start_n, &verbose_cout]()
              {
+               verbose_cout << "  Projection Step" << std::endl;
                projection_step();
+               verbose_cout << "  Updating the Pressure" << std::endl;
                update_pressure (n == step_start_n);
              });
         }
 
-        verbose_cout << "  Updating the Pressure" << std::endl;
         vel_exact.advance_time(dt);
 
       }
