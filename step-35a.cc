@@ -70,7 +70,7 @@
 #include <memory>
 #include <string>
 
-// #define STEP_35A_USE_PETSC
+#define STEP_35A_USE_PETSC
 
 #ifdef STEP_35A_USE_PETSC
 #include <deal.II/lac/petsc_parallel_sparse_matrix.h>
@@ -83,7 +83,41 @@
 
 namespace Step35
 {
+
   using namespace dealii;
+
+#ifdef STEP_35A_USE_PETSC
+  inline
+  void
+  copy_to_petsc(const Vector<double> &input,
+                PETScWrappers::MPI::Vector &result)
+  {
+    AssertDimension(input.size(), result.size());
+    PetscScalar *solution_ptr;
+
+    int ierr = VecGetArray(result, &solution_ptr);
+    AssertThrow(ierr == 0, ExcPETScError(ierr));
+    std::copy(input.begin(), input.end(), solution_ptr);
+    ierr = VecRestoreArray(result, &solution_ptr);
+    AssertThrow(ierr == 0, ExcPETScError(ierr));
+  }
+
+  inline
+  void
+  copy_from_petsc(Vector<double> &result,
+                  PETScWrappers::MPI::Vector &input)
+  {
+    AssertDimension(input.size(), result.size());
+    PetscScalar *solution_ptr;
+
+    int ierr = VecGetArray(input, &solution_ptr);
+    AssertThrow(ierr == 0, ExcPETScError(ierr));
+    std::copy(solution_ptr, solution_ptr + input.size(), result.begin());
+    ierr = VecRestoreArray(input, &solution_ptr);
+    AssertThrow(ierr == 0, ExcPETScError(ierr));
+  }
+#endif
+
   namespace RunTimeParameters
   {
     enum MethodFormulation
@@ -451,7 +485,6 @@ namespace Step35
     SparseMatrix<double> vel_it_matrix[dim];
     SparseMatrix<double> vel_Mass;
     SparseMatrix<double> vel_Advection;
-    SparseMatrix<double> pres_Mass;
     SparseMatrix<double> pres_Diff[dim];
 
     Vector<double>      pres_n;
@@ -467,7 +500,6 @@ namespace Step35
     Vector<double>      rot_u;
 
     SparseILU<double>   prec_velocity[dim];
-    SparseDirectUMFPACK prec_mass;
     SparseDirectUMFPACK prec_vel_mass;
 
     double height;
@@ -477,10 +509,14 @@ namespace Step35
 
 #ifdef STEP_35A_USE_PETSC
     PETScWrappers::MPI::SparseMatrix pres_Laplace;
+    PETScWrappers::MPI::SparseMatrix pres_Mass;
     std::unique_ptr<PETScWrappers::PreconditionBoomerAMG> prec_pres;
+    std::unique_ptr<PETScWrappers::PreconditionBoomerAMG> prec_pres_Mass;
 #else
     SparseMatrix<double> pres_Laplace;
+    SparseMatrix<double> pres_Mass;
     SparseILU<double> prec_pres;
+    SparseDirectUMFPACK prec_pres_Mass;
 #endif
 
 
@@ -504,7 +540,7 @@ namespace Step35
 
     void projection_step ();
 
-    void update_pressure (const bool reinit_prec);
+    void update_pressure ();
 
   private:
     unsigned int vel_max_its;
@@ -974,59 +1010,70 @@ namespace Step35
       pressure_sparsity_pattern.copy_from (dynamic_sparsity_pattern);
     }
 
-    pres_Mass.reinit (pressure_sparsity_pattern);
-
-    // the pressure/projection matrix never changes, so set up its preconditioner here too
+    // the pressure/projection matrices never change, so set up
+    // preconditioners here too
     const IndexSet pressure_dofs = complete_index_set(dof_handler_pressure.n_dofs());
 #ifdef STEP_35A_USE_PETSC
     pres_Laplace.reinit(pressure_dofs, pressure_dofs, projection_sparsity_pattern,
                         MPI_COMM_WORLD);
+    pres_Mass.reinit (pressure_dofs, pressure_dofs, pressure_sparsity_pattern,
+                      MPI_COMM_WORLD);
 #else
     pres_Laplace.reinit (projection_sparsity_pattern);
+    pres_Mass.reinit (pressure_sparsity_pattern);
 #endif
     {
       FEValues<dim> fe_values(fe_pressure,
                               quadrature_pressure,
-                              update_gradients | update_JxW_values);
-      FullMatrix<double> cell_matrix(fe_pressure.dofs_per_cell,
-                                     fe_pressure.dofs_per_cell);
+                              update_values | update_gradients | update_JxW_values);
+      FullMatrix<double> cell_laplace_matrix(fe_pressure.dofs_per_cell,
+                                             fe_pressure.dofs_per_cell);
+      FullMatrix<double> cell_mass_matrix(fe_pressure.dofs_per_cell,
+                                          fe_pressure.dofs_per_cell);
       std::vector<types::global_dof_index> cell_dofs(fe_pressure.dofs_per_cell);
       for (const auto cell : dof_handler_pressure.active_cell_iterators())
         {
           fe_values.reinit(cell);
           cell->get_dof_indices(cell_dofs);
-          cell_matrix = 0.0;
+          cell_mass_matrix = 0.0;
+          cell_laplace_matrix = 0.0;
           for (unsigned int q = 0; q < fe_values.n_quadrature_points; ++q)
             {
               for (unsigned int i = 0; i < fe_pressure.dofs_per_cell; ++i)
                 for (unsigned int j = 0; j < fe_pressure.dofs_per_cell; ++j)
-                  cell_matrix(i, j) += (fe_values.shape_grad(i, q)
-                                        * fe_values.shape_grad(j, q))
-                    * fe_values.JxW(q);
+                  {
+                    cell_laplace_matrix(i, j) += (fe_values.shape_grad(i, q)
+                                                  * fe_values.shape_grad(j, q))
+                      * fe_values.JxW(q);
+                    cell_mass_matrix(i, j) += (fe_values.shape_value(i, q)
+                                               * fe_values.shape_value(j, q))
+                      * fe_values.JxW(q);
+                  }
             }
-          projection_constraints.distribute_local_to_global(cell_matrix,
+          projection_constraints.distribute_local_to_global(cell_laplace_matrix,
                                                             cell_dofs,
                                                             pres_Laplace);
+          pres_Mass.add(cell_dofs, cell_mass_matrix);
         }
 #ifdef STEP_35A_USE_PETSC
       pres_Laplace.compress(VectorOperation::add);
+      pres_Mass.compress(VectorOperation::add);
       PETScWrappers::PreconditionBoomerAMG::AdditionalData options;
       options.symmetric_operator = true;
 
       prec_pres.reset(new PETScWrappers::PreconditionBoomerAMG(pres_Laplace,
                                                                options));
+      prec_pres_Mass.reset(new PETScWrappers::PreconditionBoomerAMG(pres_Mass,
+                                                                    options));
 #else
       prec_pres.initialize(pres_Laplace,
                            SparseILU<double>::
                            AdditionalData(vel_diag_strength,
                                           vel_off_diagonals,
                                           /*use_previous_sparsity=*/true));
+      prec_pres_Mass.initialize(pres_Mass);
 #endif
     }
-
-    MatrixCreator::create_mass_matrix (dof_handler_pressure,
-                                       quadrature_pressure,
-                                       pres_Mass);
   }
 
 
@@ -1182,7 +1229,7 @@ namespace Step35
                verbose_cout << "  Projection Step" << std::endl;
                projection_step();
                verbose_cout << "  Updating the Pressure" << std::endl;
-               update_pressure (n == step_start_n);
+               update_pressure ();
              });
         }
 
@@ -1423,15 +1470,10 @@ namespace Step35
       const IndexSet pressure_dofs = complete_index_set(dof_handler_pressure.n_dofs());
       PETScWrappers::MPI::Vector petsc_solution(pressure_dofs, MPI_COMM_WORLD);
       PETScWrappers::MPI::Vector petsc_rhs(pressure_dofs, MPI_COMM_WORLD);
-      PetscScalar *solution_ptr;
 
       {
         TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_2");
-        int ierr = VecGetArray(petsc_rhs, &solution_ptr);
-        AssertThrow(ierr == 0, ExcPETScError(ierr));
-        std::copy(pres_tmp.begin(), pres_tmp.end(), solution_ptr);
-        ierr = VecRestoreArray(petsc_rhs, &solution_ptr);
-        AssertThrow(ierr == 0, ExcPETScError(ierr));
+        copy_to_petsc(pres_tmp, petsc_rhs);
       }
 
       {
@@ -1443,11 +1485,7 @@ namespace Step35
 
       {
         TimerOutput::Scope timer_scope(timer_output, "projection_step_setup_3");
-        int ierr = VecGetArray(petsc_solution, &solution_ptr);
-        AssertThrow(ierr == 0, ExcPETScError(ierr));
-        std::copy(solution_ptr, solution_ptr + petsc_solution.size(), phi_n.begin());
-        ierr = VecRestoreArray(petsc_solution, &solution_ptr);
-        AssertThrow(ierr == 0, ExcPETScError(ierr));
+        copy_from_petsc(phi_n, petsc_solution);
         projection_constraints.distribute(phi_n);
       }
     }
@@ -1471,7 +1509,7 @@ namespace Step35
 
   template <int dim>
   void
-  NavierStokesProjection<dim>::update_pressure (const bool reinit_prec)
+  NavierStokesProjection<dim>::update_pressure ()
   {
     TimerOutput::Scope timer_scope(timer_output, "update_pressure");
     pres_n_minus_1 = pres_n;
@@ -1481,10 +1519,22 @@ namespace Step35
         pres_n += phi_n;
         break;
       case RunTimeParameters::METHOD_ROTATIONAL:
-        if (reinit_prec)
-          prec_mass.initialize (pres_Mass);
         pres_n = pres_tmp;
-        prec_mass.solve (pres_n);
+#ifdef STEP_35A_USE_PETSC
+        {
+          const IndexSet pressure_dofs = complete_index_set(dof_handler_pressure.n_dofs());
+          PETScWrappers::MPI::Vector petsc_solution(pressure_dofs, MPI_COMM_WORLD);
+          PETScWrappers::MPI::Vector petsc_rhs(pressure_dofs, MPI_COMM_WORLD);
+          copy_to_petsc(pres_n, petsc_rhs);
+
+          SolverControl solver_control (vel_max_its, vel_eps*pres_tmp.l2_norm());
+          PETScWrappers::SolverCG solver(solver_control, MPI_COMM_WORLD);
+          solver.solve(pres_Mass, petsc_solution, petsc_rhs, *prec_pres_Mass);
+          copy_from_petsc(pres_n, petsc_solution);
+        }
+#else
+        prec_pres_Mass.solve (pres_n);
+#endif
         pres_n.sadd(1.0/Re, 1.0, pres_n_minus_1);
         pres_n.add(1.0, phi_n);
         break;
