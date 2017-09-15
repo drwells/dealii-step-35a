@@ -744,11 +744,12 @@ namespace Step35
     GridIn<dim> grid_in;
     grid_in.attach_triangulation (triangulation);
     {
-      std::string filename = "nsbench2.inp";
+      // std::string filename = "nsbench2.inp";
+      std::string filename = "cylinderextruded.msh";
       std::ifstream file (filename.c_str());
       Assert (file, ExcFileNotOpen (filename.c_str()));
-      // grid_in.read_msh (file);
-      grid_in.read_ucd (file);
+      grid_in.read_msh (file);
+      // grid_in.read_ucd (file);
     }
     std::cout << "Number of refines = " << n_refines
               << '\n';
@@ -1404,7 +1405,7 @@ namespace Step35
     for (unsigned int q = 0; q < scratch.nqp; ++q)
       for (unsigned int i = 0; i < scratch.dpc; ++i)
         for (unsigned int j = 0; j < scratch.dpc; ++j)
-          data.local_advection(i,j) +=
+          data.local_advection(i, j) +=
             (
              // diffusion
              inverse_re *
@@ -1722,7 +1723,7 @@ int main(int argc, char **argv)
       {
         deallog.depth_console (data.verbose ? 2 : 0);
 
-        NavierStokesProjection<2> test (data);
+        NavierStokesProjection<3> test (data);
         test.run (data.verbose, data.output_interval);
       }
     }

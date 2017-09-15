@@ -6,7 +6,7 @@ subsection Physical data
   # In this subsection we declare the physical data
   # The initial and final time, and the Reynolds number
   set initial_time = 0.
-  set final_time   = 2
+  set final_time   = 0.01
   set Reynolds     = 100
   # set load_checkpoint_file_name = checkpoint_save.h5
   # set save_checkpoint_file_name = checkpoint_save_final.h5
@@ -16,15 +16,15 @@ end
 subsection Time step data
   # In this subsection we declare the data that is to be used for time discretization,
   # i.e. the time step dt
-  set dt = 2e-2
+  set dt = 5e-4
 end
 
 subsection Space discretization
   # In this subsection we declare the data that is relevant to the space discretization
   # we set the number of global refines the triangulation must have
   # and the degree k of the pair Q_(k+1)--Q_k of velocity--pressure finite element spaces
-  set n_of_refines = 3
-  set pressure_fe_degree = 1
+  set n_of_refines = 0
+  set pressure_fe_degree = 2
 end
 
 subsection Data solve velocity
@@ -35,7 +35,7 @@ subsection Data solve velocity
   set Krylov_size    = 30    # size of the Krylov subspace to be used in GMRES
   set off_diagonals  = 0     # number of off diagonals that ILU must compute
   set diag_strength  = 0.00  # diagonal strengthening value
-  set update_prec    = 50    # this number indicates how often the preconditioner must be updated
+  set update_prec    = 100   # this number indicates how often the preconditioner must be updated
 end
 
 #The output frequency
